@@ -1,0 +1,13 @@
+.{
+    .name = .ghez,
+    .fingerprint = 0x692b8dfe53e0b057,
+    .version = "0.1.0",
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{
+        .raylib = .{
+            .url = "git+https://github.com/raysan5/raylib?ref=master#200d344dee1434a6b819db505d639e84e32790f3",
+            .hash = "raylib-6.0.0-whq8uJtyLwUPSqUapoOy-ALRI-NzZ6dFzJI2VMgu8X-g",
+        },
+    },
+    .paths = .{""},
+}
