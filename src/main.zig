@@ -1,33 +1,31 @@
-const std = @import("std");
 const rl = @cImport(@cInclude("raylib.h"));
+const board = @import("board.zig");
+const render = @import("render.zig");
 
-const WINDOW_W = 640;
-const WINDOW_H = 640;
-const SQUARE_SIZE = WINDOW_W / 8;
-
-const LIGHT = rl.Color{ .r = 240, .g = 217, .b = 181, .a = 255 };
-const DARK = rl.Color{ .r = 181, .g = 136, .b = 99, .a = 255 };
+const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
 pub fn main() void {
-    rl.InitWindow(WINDOW_W, WINDOW_H, "ghez");
+    rl.InitWindow(render.SQUARE_SIZE * 8, render.SQUARE_SIZE * 8, "ghez");
     defer rl.CloseWindow();
     rl.SetTargetFPS(60);
 
+    var game_board = board.Board.fromFen(START_FEN);
+    const renderer = render.Renderer.init();
+    defer renderer.deinit();
+
+    var drag = render.DragState{};
+
     while (!rl.WindowShouldClose()) {
+        if (game_board.gameResult() == .ongoing) {
+            if (renderer.handleInput(game_board, &drag)) |m| {
+                game_board = game_board.applyMove(m);
+            }
+        }
+
         rl.BeginDrawing();
         rl.ClearBackground(rl.RAYWHITE);
-        drawBoard();
+        renderer.drawBoard(drag);
+        renderer.drawPieces(game_board, drag);
         rl.EndDrawing();
-    }
-}
-
-fn drawBoard() void {
-    for (0..8) |row| {
-        for (0..8) |col| {
-            const x: c_int = @intCast(col * SQUARE_SIZE);
-            const y: c_int = @intCast(row * SQUARE_SIZE);
-            const light = (row + col) % 2 == 0;
-            rl.DrawRectangle(x, y, SQUARE_SIZE, SQUARE_SIZE, if (light) LIGHT else DARK);
-        }
     }
 }
