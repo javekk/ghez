@@ -1,0 +1,16 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug ghez",
+            "cargo": {
+                "args": ["build", "--bin=ghez"],
+                "filter": { "name": "ghez", "kind": "bin" }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}
