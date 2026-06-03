@@ -8,35 +8,42 @@ Chess GUI for testing khez engine versions. Supports human-vs-engine and engine-
 
 ## Stack
 
-- **Zig 0.15**
-- **Raylib** via Zig package manager (statically linked, zero runtime deps, single binary)
-- **raygui** (bundled with raylib) for UI panels
+- **Rust** (edition 2024)
+- **macroquad 0.4** — windowing, input, 2D rendering (single dep)
 
 ## Commands
 
 ```sh
-zig build          # build
-zig build run      # build and run
-zig build test     # run tests
+cargo build         # build
+cargo run           # build and run
+cargo test          # run all tests
+cargo test <name>   # run a single test by name substring
+cargo check         # fast type-check without codegen
+cargo clippy        # lint
 ```
 
 ## Architecture
 
 ```
 src/
-├── main.zig       # entry point: init raylib window, main loop
-├── board.zig      # 8x8 board state, FEN parse/serialize, pseudo-legal move gen, legality, draw detection
-├── render.zig     # raylib draw calls: board, pieces (PNG sprites), drag/drop input
-├── uci.zig        # UCI engine subprocess: std.process.Child + pipes, async reader thread, parse bestmove/info
-├── match.zig      # game state machine, two engine slots, clock
-└── ui.zig         # raygui panels: engine config, live info (depth/score/nodes/PV), move list
+├── main.rs                 # entry: declares module tree, macroquad main loop
+├── game/
+│   ├── domain.rs           # Square, Side, PieceType, Piece, Board = [Option<Piece>; 64]
+│   ├── game_state.rs       # GameState: board + side to move + castling rights + en passant + counters
+│   └── game.rs             # Game wrapper: constructors (incl. FEN parsing), drives game progression
+└── render/
+    ├── renderer.rs         # macroquad draw calls: board, pieces from sprite sheet
+    └── theme.rs            # sizing constants, colors
 ```
 
 **Key design points:**
-- `uci.zig` wraps each engine with its own `std.Thread` reading stdout asynchronously.
-- `match.zig` owns two `UciEngine` instances, drives state machine: `IDLE → WHITE_THINKING → BLACK_THINKING → GAME_OVER`.
-- `board.zig` implements move generation directly — pseudo-legal moves filtered by king-in-check after applying.
-- Piece sprites: cburnett set (public domain), knight replaced with a giraffe. 128px PNGs in `assets/pieces/`.
+
+- `main.rs` declares the full module tree inline (`mod render { pub mod ... }`). Adding a new file means adding a `pub mod` line here.
+- `Renderer::new()` is async — loads the sprite sheet via `load_texture`. Must be `.await`ed before the main loop.
+- `Renderer` owns GPU/asset state (`Texture2D`, sprite rects). It takes `&GameState` to draw — never mutates game state.
+- Piece sprites come from a single sheet `assets/pieces/chess_sprites.png` with rows for color variants and columns for piece types. Slicing happens in `Renderer::new`.
+- `Board` is a flat `[Option<Piece>; 64]` indexed `a1..h1, a2..h2, ..., a8..h8` (rank-major, white's back rank first). FEN parsing in `Game::from_fen` walks ranks 8 → 1.
+- `GameState` is `Copy` — keep it that way (no heap-allocating fields like `HashMap`/`Vec`). Cheap clones matter once search/perft land.
 
 ## Plan
 
