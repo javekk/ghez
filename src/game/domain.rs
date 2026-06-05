@@ -1,4 +1,5 @@
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+
 pub enum Square {
     A1,
     B1,
@@ -64,6 +65,17 @@ pub enum Square {
     F8,
     G8,
     H8,
+}
+
+impl TryFrom<i8> for Square {
+    type Error = ();
+    fn try_from(v: i8) -> Result<Self, ()> {
+        if v < 64 {
+            Ok(unsafe { std::mem::transmute::<u8, Square>(v as u8) })
+        } else {
+            Err(())
+        }
+    }
 }
 
 pub type Board = [Option<Piece>; 64];
