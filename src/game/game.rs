@@ -1,5 +1,5 @@
 use crate::game::{
-    domain::{Board, Piece, PieceType, Side},
+    domain::{Board, Piece, PieceType, Side, Square},
     game_state::GameState,
 };
 
@@ -24,6 +24,23 @@ impl Game {
         Self {
             game_state: Self::from_fen(fen),
         }
+    }
+
+    pub fn get_piece(&self, square: Square) -> Option<Piece> {
+        self.game_state.board[square as usize]
+    }
+
+    fn set_piece(&mut self, square: Square, piece: Piece) {
+        self.game_state.board[square as usize] = Some(piece);
+    }
+
+    pub fn move_piece(&mut self, from: Square, to: Square) -> bool {
+        let Some(piece) = self.get_piece(from) else {
+            return false;
+        };
+
+        self.set_piece(to, piece);
+        true
     }
 
     fn from_fen(fen: &str) -> GameState {

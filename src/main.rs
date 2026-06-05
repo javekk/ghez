@@ -20,12 +20,22 @@ use crate::render::renderer::Renderer;
 #[macroquad::main("Ghez")]
 async fn main() {
     let fen = "rnbqkbnr/pppp1ppp/4p3/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-    let game: Game = Game::new_game_from_fen(fen);
+    let mut game: Game = Game::new_game_from_fen(fen);
     let renderer: Renderer = Renderer::new().await;
     let mut input_handler: InputHandler = InputHandler::new();
 
     loop {
+        match input_handler.poll(&game) {
+            inputs::handler::InputStatus::Chilling => { /* Just chilling */ }
+            inputs::handler::InputStatus::Dragging(drag) => {
+                // TODO stuff here
+                println!("DRAG DUDE")
+            }
+            inputs::handler::InputStatus::Releasing(drag, to) => {
+                // TODO also here
+                game.move_piece(drag.from, to);
+            }
+        };
         renderer.run(&game.game_state).await;
-        input_handler.poll(&game.game_state);
     }
 }
