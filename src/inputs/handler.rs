@@ -1,5 +1,6 @@
 use macroquad::input::{
-    MouseButton, is_mouse_button_pressed, is_mouse_button_released, mouse_position,
+    MouseButton, is_mouse_button_down, is_mouse_button_pressed, is_mouse_button_released,
+    mouse_position,
 };
 
 use crate::{
@@ -10,12 +11,12 @@ use crate::{
     render::theme,
 };
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 
 pub struct Drag {
     pub from: Square,
     pub piece: Piece,
-    pub mouse: (f32, f32), // Current cursor px
+    pub mouse_pos: (f32, f32), // Current cursor px
 }
 
 pub enum InputStatus {
@@ -26,22 +27,18 @@ pub enum InputStatus {
 
 pub struct InputHandler {
     drag: Option<Drag>,
-    mouse_position: (f32, f32),
 }
 
 impl InputHandler {
     pub fn new() -> Self {
-        Self {
-            drag: None,
-            mouse_position: (0., 0.),
-        }
+        Self { drag: None }
     }
 
     pub fn poll(&mut self, game: &Game) -> InputStatus {
-        self.mouse_position = mouse_position();
+        let pos = mouse_position();
 
         if is_mouse_button_pressed(MouseButton::Left) && self.drag.is_none() {
-            let Ok(square) = Self::pixel_to_square(self.mouse_position) else {
+            let Ok(square) = Self::pixel_to_square(pos) else {
                 println!("No square selected");
                 return InputStatus::Chilling;
             };
@@ -55,19 +52,21 @@ impl InputHandler {
             let drag = Drag {
                 from: square,
                 piece,
-                mouse: self.mouse_position,
+                mouse_pos: pos,
             };
             self.drag = Some(drag.clone());
             return InputStatus::Dragging(drag.clone());
         }
 
         if is_mouse_button_released(MouseButton::Left) && self.drag.is_some() {
+            let pos = mouse_position();
+
             let Some(drag) = self.drag.take() else {
                 println!("This seems an error state");
                 return InputStatus::Chilling;
             };
 
-            let Ok(square) = Self::pixel_to_square(self.mouse_position) else {
+            let Ok(square) = Self::pixel_to_square(pos) else {
                 println!("No square selected on release");
                 return InputStatus::Chilling;
             };
@@ -81,6 +80,18 @@ impl InputHandler {
             }
             return InputStatus::Releasing(drag.clone(), square);
         }
+
+        if is_mouse_button_down(MouseButton::Left) && self.drag.is_some() {
+            if let Some(drag) = self.drag.as_ref() {
+                let new_drag = Drag {
+                    from: drag.from,
+                    piece: drag.piece,
+                    mouse_pos: mouse_position(),
+                };
+                return InputStatus::Dragging(new_drag);
+            }
+        }
+
         InputStatus::Chilling
     }
 

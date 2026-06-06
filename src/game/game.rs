@@ -34,12 +34,24 @@ impl Game {
         self.game_state.board[square as usize] = Some(piece);
     }
 
+    fn clear_square(&mut self, square: Square) -> bool {
+        if self.get_piece(square).is_none() {
+            return false;
+        };
+
+        self.game_state.board[square as usize] = None;
+        true
+    }
+
     pub fn move_piece(&mut self, from: Square, to: Square) -> bool {
         let Some(piece) = self.get_piece(from) else {
             return false;
         };
 
+        // Check if legal move
+
         self.set_piece(to, piece);
+        self.clear_square(from);
         true
     }
 
