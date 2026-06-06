@@ -83,6 +83,64 @@ impl Renderer {
         }
     }
 
+    fn draw_squares(&self) {
+        let mut is_light = true; // start from a8
+        for row in 0..8 {
+            for col in 0..8 {
+                let color = if is_light { theme::LIGHT } else { theme::DARK };
+                let offset_x = (col * theme::SQUARE_SIZE) as f32;
+                let offset_y = (row * theme::SQUARE_SIZE) as f32;
+                draw_rectangle(
+                    offset_x,
+                    offset_y,
+                    theme::SQUARE_SIZE as f32,
+                    theme::SQUARE_SIZE as f32,
+                    color,
+                );
+
+                is_light = !is_light;
+            }
+            is_light = !is_light;
+        }
+    }
+
+    fn draw_borders(&self) {
+        for row in 0..8 {
+            let x1 = 0.;
+            let y1 = (row * theme::SQUARE_SIZE) as f32;
+            let x2 = 8. * theme::SQUARE_SIZE as f32;
+            let y2 = (row * theme::SQUARE_SIZE) as f32;
+            draw_line(x1, y1, x2, y2, theme::BORDER as f32, theme::BORDER_COLOR);
+        }
+
+        for col in 0..8 {
+            let x1 = (col * theme::SQUARE_SIZE) as f32;
+            let y1 = 0.;
+            let x2 = (col * theme::SQUARE_SIZE) as f32;
+            let y2 = 8. * theme::SQUARE_SIZE as f32;
+            draw_line(x1, y1, x2, y2, theme::BORDER as f32, theme::BORDER_COLOR);
+        }
+    }
+
+    fn draw_pieces(&self, game_state: &GameState, input_status: &InputStatus) {
+        for (i, piece_option) in game_state.board.iter().enumerate() {
+            if let Some(piece) = piece_option {
+                if let inputs::handler::InputStatus::Dragging(drag) = &input_status {
+                    if i == drag.from as usize {
+                        // skip drawing this piece at its square — it's being dragged
+                        continue;
+                    }
+                }
+                self.draw_piece_to_usquare(*piece, i);
+            }
+        }
+
+        // Drag
+        if let inputs::handler::InputStatus::Dragging(drag) = &input_status {
+            self.draw_dragged_piece(drag.piece, drag.mouse_pos);
+        }
+    }
+
     fn square_to_pixel(i: usize) -> (f32, f32) {
         let square = theme::SQUARE_SIZE as f32;
         let border = (theme::BORDER_SIZE / 2) as f32;
@@ -142,61 +200,9 @@ impl Renderer {
     pub async fn run(&self, game_state: &GameState, input_status: &InputStatus) {
         clear_background(theme::BORDER_COLOR);
 
-        // Draw cells
-        let mut is_light = true; // start from a8
-        for row in 0..8 {
-            for col in 0..8 {
-                let color = if is_light { theme::LIGHT } else { theme::DARK };
-                let offset_x = (col * theme::SQUARE_SIZE) as f32;
-                let offset_y = (row * theme::SQUARE_SIZE) as f32;
-                draw_rectangle(
-                    offset_x,
-                    offset_y,
-                    theme::SQUARE_SIZE as f32,
-                    theme::SQUARE_SIZE as f32,
-                    color,
-                );
-
-                is_light = !is_light;
-            }
-            is_light = !is_light;
-        }
-
-        // Draw boarders
-        for row in 0..8 {
-            let x1 = 0.;
-            let y1 = (row * theme::SQUARE_SIZE) as f32;
-            let x2 = 8. * theme::SQUARE_SIZE as f32;
-            let y2 = (row * theme::SQUARE_SIZE) as f32;
-            draw_line(x1, y1, x2, y2, theme::BORDER as f32, theme::BORDER_COLOR);
-        }
-
-        for col in 0..8 {
-            let x1 = (col * theme::SQUARE_SIZE) as f32;
-            let y1 = 0.;
-            let x2 = (col * theme::SQUARE_SIZE) as f32;
-            let y2 = 8. * theme::SQUARE_SIZE as f32;
-            draw_line(x1, y1, x2, y2, theme::BORDER as f32, theme::BORDER_COLOR);
-        }
-
-        // Draw pieces
-
-        for (i, piece_option) in game_state.board.iter().enumerate() {
-            if let Some(piece) = piece_option {
-                if let inputs::handler::InputStatus::Dragging(drag) = &input_status {
-                    if i == drag.from as usize {
-                        // skip drawing this piece at its square — it's being dragged
-                        continue;
-                    }
-                }
-                self.draw_piece_to_usquare(*piece, i);
-            }
-        }
-
-        // Drag
-        if let inputs::handler::InputStatus::Dragging(drag) = &input_status {
-            self.draw_dragged_piece(drag.piece, drag.mouse_pos);
-        }
+        self.draw_squares();
+        self.draw_borders();
+        self.draw_pieces(game_state, input_status);
 
         next_frame().await
     }

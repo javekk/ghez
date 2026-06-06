@@ -1,6 +1,9 @@
-use crate::game::{
-    domain::{Board, Piece, PieceType, Side, Square},
-    game_state::GameState,
+use crate::{
+    game::{
+        domain::{Board, Piece, PieceType, Side, Square},
+        game_state::GameState,
+    },
+    inputs::handler::InputStatus,
 };
 
 pub struct Game {
@@ -43,7 +46,7 @@ impl Game {
         true
     }
 
-    pub fn move_piece(&mut self, from: Square, to: Square) -> bool {
+    fn move_piece(&mut self, from: Square, to: Square) -> bool {
         let Some(piece) = self.get_piece(from) else {
             return false;
         };
@@ -53,6 +56,23 @@ impl Game {
         self.set_piece(to, piece);
         self.clear_square(from);
         true
+    }
+
+    pub fn parse_input(&mut self, input_status: &InputStatus) {
+        match input_status {
+            InputStatus::Chilling => { /* just chilling */ }
+            InputStatus::Dragging(drag) => {
+                // Disegna i puntini per i suggerimenti di mossa
+            }
+            InputStatus::Releasing(drag, square) => {
+                // controlla se square esiste o è uguale alla partenza
+                if let Some(square) = *square {
+                    if drag.from != square {
+                        self.move_piece(drag.from, square);
+                    }
+                }
+            }
+        }
     }
 
     fn from_fen(fen: &str) -> GameState {

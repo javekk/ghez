@@ -26,22 +26,7 @@ async fn main() {
 
     loop {
         let input_status = input_handler.poll(&game);
-
-        match input_status {
-            inputs::handler::InputStatus::Chilling => { /* Just chilling */ }
-            inputs::handler::InputStatus::Dragging(drag) => {
-                // TODO stuff here
-                println!(
-                    "DRAG DUDE where are here: x: {}, y: {}",
-                    drag.mouse_pos.0, drag.mouse_pos.1
-                );
-            }
-            inputs::handler::InputStatus::Releasing(drag, to) => {
-                // TODO also here
-                game.move_piece(drag.from, to);
-            }
-        };
-
+        game.parse_input(&input_status);
         renderer.run(&game.game_state, &input_status).await;
     }
 }

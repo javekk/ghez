@@ -8,6 +8,7 @@ use crate::{
         domain::{Piece, Square},
         game::Game,
     },
+    inputs::handler::InputStatus::Chilling,
     render::theme,
 };
 
@@ -22,7 +23,7 @@ pub struct Drag {
 pub enum InputStatus {
     Chilling,
     Dragging(Drag),
-    Releasing(Drag, Square),
+    Releasing(Drag, Option<Square>),
 }
 
 pub struct InputHandler {
@@ -68,17 +69,11 @@ impl InputHandler {
 
             let Ok(square) = Self::pixel_to_square(pos) else {
                 println!("No square selected on release");
-                return InputStatus::Chilling;
+                return InputStatus::Releasing(drag.clone(), None);
             };
             println!("Selected squar on release: {:?}", square);
 
-            if square != drag.from {
-                println!(
-                    "Move piece {:?}, from: {:?}, to: {:?}",
-                    drag.piece, drag.from, square
-                );
-            }
-            return InputStatus::Releasing(drag.clone(), square);
+            return InputStatus::Releasing(drag.clone(), Some(square));
         }
 
         if is_mouse_button_down(MouseButton::Left) && self.drag.is_some() {
