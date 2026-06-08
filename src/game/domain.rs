@@ -67,13 +67,12 @@ pub enum Square {
     H8,
 }
 
-impl TryFrom<i8> for Square {
-    type Error = ();
-    fn try_from(v: i8) -> Result<Self, ()> {
-        if v < 64 {
-            Ok(unsafe { std::mem::transmute::<u8, Square>(v as u8) })
+impl Square {
+    pub fn from_index(v: i8) -> Option<Square> {
+        if (0..64).contains(&v) {
+            Some(unsafe { std::mem::transmute::<u8, Square>(v as u8) })
         } else {
-            Err(())
+            None
         }
     }
 }
@@ -100,4 +99,30 @@ pub enum PieceType {
 pub struct Piece {
     pub side: Side,
     pub kind: PieceType,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn from_index_returns_square_for_valid_range() {
+        assert_eq!(Square::from_index(0), Some(Square::A1));
+        assert_eq!(Square::from_index(63), Some(Square::H8));
+        assert_eq!(Square::from_index(8), Some(Square::A2));
+    }
+
+    #[test]
+    fn from_index_returns_none_for_out_of_range() {
+        assert_eq!(Square::from_index(-1), None);
+        assert_eq!(Square::from_index(64), None);
+    }
+
+    #[test]
+    fn square_as_usize_round_trips_through_from_index() {
+        for i in 0..64i8 {
+            let sq = Square::from_index(i).unwrap();
+            assert_eq!(sq as i8, i);
+        }
+    }
 }

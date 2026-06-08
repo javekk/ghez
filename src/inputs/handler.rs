@@ -39,7 +39,7 @@ impl InputHandler {
         let pos = mouse_position();
 
         if is_mouse_button_pressed(MouseButton::Left) && self.drag.is_none() {
-            let Ok(square) = Self::pixel_to_square(pos) else {
+            let Some(square) = Self::pixel_to_square(pos) else {
                 println!("No square selected");
                 return InputStatus::Chilling;
             };
@@ -67,13 +67,13 @@ impl InputHandler {
                 return InputStatus::Chilling;
             };
 
-            let Ok(square) = Self::pixel_to_square(pos) else {
+            if let Some(square) = Self::pixel_to_square(pos) {
+                println!("Selected squar on release: {:?}", square);
+                return InputStatus::Releasing(drag.clone(), Some(square));
+            } else {
                 println!("No square selected on release");
                 return InputStatus::Releasing(drag.clone(), None);
             };
-            println!("Selected squar on release: {:?}", square);
-
-            return InputStatus::Releasing(drag.clone(), Some(square));
         }
 
         if is_mouse_button_down(MouseButton::Left) && self.drag.is_some() {
@@ -90,7 +90,7 @@ impl InputHandler {
         InputStatus::Chilling
     }
 
-    fn pixel_to_square(mouse_position: (f32, f32)) -> Result<Square, ()> {
+    fn pixel_to_square(mouse_position: (f32, f32)) -> Option<Square> {
         // TODO check that we are inside the board
 
         let file = mouse_position.0 / theme::SQUARE_SIZE as f32;
@@ -100,6 +100,6 @@ impl InputHandler {
         let urank = 7 - (rank as i8);
         let idx = urank * 8 + ufile;
 
-        Square::try_from(idx)
+        Square::from_index(idx)
     }
 }
