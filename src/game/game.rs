@@ -133,12 +133,12 @@ impl Game {
         }
     }
 
-    fn get_knight_pseudo_legal_moves(&self, side: Side, square: Square) -> Vec<Square> {
-        let usquare = square as i8;
-        let file = usquare % 8;
-        let rank = usquare / 8;
+    fn piece_at(&self, square: Square) -> Option<Piece> {
+        self.game_state.board[square as usize]
+    }
 
-        const DELTAS: [(i8, i8); 8] = [
+    fn get_knight_pseudo_legal_moves(&self, side: Side, square: Square) -> Vec<Square> {
+        const KNIGHT_DELTAS: [(i8, i8); 8] = [
             (1, 2),
             (2, 1),
             (2, -1),
@@ -149,68 +149,59 @@ impl Game {
             (-1, 2),
         ];
 
-        let mut out = Vec::new();
-        for (delta_file, delta_rank) in DELTAS {
-            let candidate_file = file + delta_file;
-            let candidate_rank = rank + delta_rank;
-            if !(0..8).contains(&candidate_file) || !(0..8).contains(&candidate_rank) {
+        let mut moves = Vec::new();
+        for (delta_file, delta_rank) in KNIGHT_DELTAS {
+            let Some(target_square) =
+                Square::from_file_rank(square.file() + delta_file, square.rank() + delta_rank)
+            else {
                 continue;
-            }
-            let target = Square::from_index(candidate_rank * 8 + candidate_file).unwrap();
-            match self.game_state.board[target as usize] {
-                Some(p) if p.side == side => { /* block by side */ }
-                _ => out.push(target),
+            };
+            match self.piece_at(target_square) {
+                Some(target_piece) if target_piece.side == side => {}
+                _ => moves.push(target_square),
             }
         }
-        out
+        moves
     }
 
     fn get_pawn_pseudo_legal_moves(&self, side: Side, square: Square) -> Vec<Square> {
-        let usquare = square as i8;
-        let file = usquare % 8;
-        let rank = usquare / 8;
+        let file = square.file();
+        let rank = square.rank();
+        let direction = side.direction();
 
-        let mut out = Vec::new();
-        let sign: i8 = if side == Side::White { 1 } else { -1 };
+        let mut moves = Vec::new();
 
-        // Quite moves
-        let one_step = (rank + sign) * 8 + file;
-
-        if let Some(one_step) = Square::from_index(one_step) {
-            if self.game_state.board[one_step as usize].is_none() {
-                out.push(one_step);
-
-                let on_start = matches!((side, rank), (Side::White, 1) | (Side::Black, 6));
-                if on_start {
-                    let two_step = (rank + 2 * sign) * 8 + file;
-                    let two_sq = Square::from_index(two_step).unwrap();
-                    if self.game_state.board[two_sq as usize].is_none() {
-                        out.push(two_sq);
+        // Quiet moves: single step, and double step from start rank.
+        if let Some(one_step_square) = Square::from_file_rank(file, rank + direction) {
+            if self.piece_at(one_step_square).is_none() {
+                moves.push(one_step_square);
+                if rank == side.pawn_start_rank() {
+                    if let Some(two_step_square) =
+                        Square::from_file_rank(file, rank + 2 * direction)
+                    {
+                        if self.piece_at(two_step_square).is_none() {
+                            moves.push(two_step_square);
+                        }
                     }
                 }
             }
         }
 
-        // Captures
-        let candidate_idx_1 = (rank + 1 * sign) * 8 + file - 1;
-        let candidate_idx_2 = (rank + 1 * sign) * 8 + file + 1;
-
-        if let Some(candidate_square_1) = Square::from_index(candidate_idx_1) {
-            if let Some(candidate_capture_1) = self.game_state.board[candidate_square_1 as usize] {
-                if candidate_capture_1.side != side {
-                    out.push(candidate_square_1);
+        // Diagonal captures (skips off-board files, e.g. a/h-file edges).
+        for capture_file_offset in [-1, 1] {
+            let Some(capture_square) =
+                Square::from_file_rank(file + capture_file_offset, rank + direction)
+            else {
+                continue;
+            };
+            if let Some(captured_piece) = self.piece_at(capture_square) {
+                if captured_piece.side != side {
+                    moves.push(capture_square);
                 }
             }
         }
 
-        if let Some(candidate_square_2) = Square::from_index(candidate_idx_2) {
-            if let Some(candidate_capture_2) = self.game_state.board[candidate_square_2 as usize] {
-                if candidate_capture_2.side != side {
-                    out.push(candidate_square_2);
-                }
-            }
-        }
-        out
+        moves
     }
 }
 
@@ -361,6 +352,19 @@ mod tests {
             "blocked pawn has no quiet moves, got {:?}",
             moves
         );
+    }
+
+    #[test]
+    fn a_file_pawn_does_not_wrap_to_h_file_on_capture() {
+        // White pawn on a2; a black piece sits on h2 (would be "left capture" if file wraps).
+        let game = Game::new_game_from_fen("8/8/8/8/8/8/P6p/8 w - - 0 1");
+        let pawn = Piece {
+            side: Side::White,
+            kind: PieceType::Pawn,
+        };
+        let moves = moves_set(&game, pawn, Square::A2);
+        let expected: HashSet<Square> = [Square::A3, Square::A4].into_iter().collect();
+        assert_eq!(moves, expected);
     }
 
     #[test]

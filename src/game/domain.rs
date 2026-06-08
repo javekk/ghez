@@ -75,6 +75,21 @@ impl Square {
             None
         }
     }
+
+    pub fn file(self) -> i8 {
+        (self as i8) % 8
+    }
+
+    pub fn rank(self) -> i8 {
+        (self as i8) / 8
+    }
+
+    pub fn from_file_rank(file: i8, rank: i8) -> Option<Square> {
+        if !(0..8).contains(&file) || !(0..8).contains(&rank) {
+            return None;
+        }
+        Square::from_index(rank * 8 + file)
+    }
 }
 
 pub type Board = [Option<Piece>; 64];
@@ -83,6 +98,22 @@ pub type Board = [Option<Piece>; 64];
 pub enum Side {
     White,
     Black,
+}
+
+impl Side {
+    pub fn direction(self) -> i8 {
+        match self {
+            Side::White => 1,
+            Side::Black => -1,
+        }
+    }
+
+    pub fn pawn_start_rank(self) -> i8 {
+        match self {
+            Side::White => 1,
+            Side::Black => 6,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
