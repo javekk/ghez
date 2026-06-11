@@ -126,7 +126,7 @@ impl Game {
         match piece.kind {
             PieceType::Pawn => self.get_pawn_pseudo_legal_moves(piece.side, square),
             PieceType::Knight => self.get_knight_pseudo_legal_moves(piece.side, square),
-            PieceType::Bishop => todo!(),
+            PieceType::Bishop => self.get_bishop_pseudo_legal_moves(piece.side, square),
             PieceType::Rook => todo!(),
             PieceType::Queen => todo!(),
             PieceType::King => todo!(),
@@ -201,6 +201,35 @@ impl Game {
             }
         }
 
+        moves
+    }
+
+    fn get_bishop_pseudo_legal_moves(&self, side: Side, square: Square) -> Vec<Square> {
+        let file = square.file();
+        let rank = square.rank();
+
+        let mut moves = Vec::new();
+
+        const BISHOPT_DIRECTION: [(i8, i8); 4] = [(1, 1), (1, -1), (-1, -1), (-1, 1)];
+        for (direction_file, direction_rank) in BISHOPT_DIRECTION {
+            for square_inc in 1..8 {
+                let Some(target_square) = Square::from_file_rank(
+                    file + (direction_file * square_inc),
+                    rank + (direction_rank * square_inc),
+                ) else {
+                    break;
+                };
+
+                match self.piece_at(target_square) {
+                    Some(p) if p.side == side => break,
+                    Some(_) => {
+                        moves.push(target_square);
+                        break;
+                    }
+                    None => moves.push(target_square),
+                }
+            }
+        }
         moves
     }
 }
@@ -412,6 +441,72 @@ mod tests {
         };
         let moves = moves_set(&game, pawn, Square::E7);
         let expected: HashSet<Square> = [Square::D6].into_iter().collect();
+        assert_eq!(moves, expected);
+    }
+
+    #[test]
+    fn bishop_can_move_in_all_squares_not_blocked_by_friendly_pieces() {
+        let game = Game::new_game_from_fen("8/8/2N5/8/4B3/8/8/N7 w - - 0 1");
+        let bishop = Piece {
+            side: Side::White,
+            kind: PieceType::Bishop,
+        };
+        let moves = moves_set(&game, bishop, Square::E4);
+        let expected: HashSet<Square> = [
+            Square::D5,
+            Square::F5,
+            Square::G6,
+            Square::H7,
+            Square::F3,
+            Square::G2,
+            Square::H1,
+            Square::D3,
+            Square::C2,
+            Square::B1,
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(moves, expected);
+    }
+
+    #[test]
+    fn bishop_can_move_in_all_squares_until_find_first_eneny_piece() {
+        let game = Game::new_game_from_fen("8/1K6/2n5/8/4B3/8/8/N7 w - - 0 1");
+        let bishop = Piece {
+            side: Side::White,
+            kind: PieceType::Bishop,
+        };
+        let moves = moves_set(&game, bishop, Square::E4);
+        let expected: HashSet<Square> = [
+            Square::D5,
+            Square::F5,
+            Square::G6,
+            Square::H7,
+            Square::F3,
+            Square::G2,
+            Square::H1,
+            Square::D3,
+            Square::C2,
+            Square::B1,
+            Square::C6,
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(moves, expected);
+    }
+
+    #[test]
+    fn bishop_can_move_in_all_squares_until_find_first_eneny_piece_or_friendly_piece() {
+        let game = Game::new_game_from_fen("8/1K6/1N6/4q3/3b4/4k3/8/N7 w - - 0 1");
+        let bishop = Piece {
+            side: Side::Black,
+            kind: PieceType::Bishop,
+        };
+        let moves = moves_set(&game, bishop, Square::D4);
+        let expected: HashSet<Square> =
+            [Square::C5, Square::B6, Square::C3, Square::B2, Square::A1]
+                .into_iter()
+                .collect();
         assert_eq!(moves, expected);
     }
 }
