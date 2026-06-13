@@ -19,7 +19,7 @@ use crate::render::renderer::Renderer;
 
 #[macroquad::main("Ghez")]
 async fn main() {
-    let fen = "8/1K6/1N6/4q3/3b4/4k3/8/N7 w - - 0 1";
+    let fen = "8/1K6/1N6/4q3/4R3/4r3/8/Nk6 w - - 0 1";
 
     let mut game: Game = Game::new_game_from_fen(fen);
     let renderer: Renderer = Renderer::new().await;

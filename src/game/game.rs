@@ -1,3 +1,5 @@
+use std::io::Error;
+
 use crate::{
     game::{
         domain::{Board, Piece, PieceType, Side, Square},
@@ -127,9 +129,9 @@ impl Game {
             PieceType::Pawn => self.get_pawn_pseudo_legal_moves(piece.side, square),
             PieceType::Knight => self.get_knight_pseudo_legal_moves(piece.side, square),
             PieceType::Bishop => self.get_bishop_pseudo_legal_moves(piece.side, square),
-            PieceType::Rook => todo!(),
-            PieceType::Queen => todo!(),
-            PieceType::King => todo!(),
+            PieceType::Rook => self.get_rook_pseudo_legal_moves(piece.side, square),
+            PieceType::Queen => self.get_queen_pseudo_legal_moves(piece.side, square),
+            PieceType::King => self.get_king_pseudo_legal_moves(piece.side, square),
         }
     }
 
@@ -137,7 +139,7 @@ impl Game {
         self.game_state.board[square as usize]
     }
 
-    fn get_knight_pseudo_legal_moves(&self, side: Side, square: Square) -> Vec<Square> {
+    fn get_leaper_piece_pseudo_legal_moves(&self, piece: Piece, square: Square) -> Vec<Square> {
         const KNIGHT_DELTAS: [(i8, i8); 8] = [
             (1, 2),
             (2, 1),
@@ -148,20 +150,56 @@ impl Game {
             (-2, 1),
             (-1, 2),
         ];
+        const KING_DELTAS: [(i8, i8); 8] = [
+            (1, 1),
+            (1, 0),
+            (1, -1),
+            (0, -1),
+            (-1, -1),
+            (-1, 0),
+            (-1, 1),
+            (0, 1),
+        ];
+
+        let directions: &[(i8, i8)] = match piece.kind {
+            PieceType::Knight => &KNIGHT_DELTAS,
+            PieceType::King => &KING_DELTAS,
+            _ => panic!("Not a leaper piece"),
+        };
 
         let mut moves = Vec::new();
-        for (delta_file, delta_rank) in KNIGHT_DELTAS {
+        for (delta_file, delta_rank) in directions {
             let Some(target_square) =
                 Square::from_file_rank(square.file() + delta_file, square.rank() + delta_rank)
             else {
                 continue;
             };
             match self.piece_at(target_square) {
-                Some(target_piece) if target_piece.side == side => {}
+                Some(target_piece) if target_piece.side == piece.side => {}
                 _ => moves.push(target_square),
             }
         }
         moves
+    }
+
+    fn get_knight_pseudo_legal_moves(&self, side: Side, square: Square) -> Vec<Square> {
+        self.get_leaper_piece_pseudo_legal_moves(
+            Piece {
+                side,
+                kind: PieceType::Knight,
+            },
+            square,
+        )
+    }
+
+    fn get_king_pseudo_legal_moves(&self, side: Side, square: Square) -> Vec<Square> {
+        self.get_leaper_piece_pseudo_legal_moves(
+            Piece {
+                side,
+                kind: PieceType::King,
+            },
+            square,
+        )
     }
 
     fn get_pawn_pseudo_legal_moves(&self, side: Side, square: Square) -> Vec<Square> {
@@ -204,14 +242,33 @@ impl Game {
         moves
     }
 
-    fn get_bishop_pseudo_legal_moves(&self, side: Side, square: Square) -> Vec<Square> {
+    fn get_sliding_piece_legal_moves(&self, piece: Piece, square: Square) -> Vec<Square> {
+        const BISHOP_DIRECTIONS: [(i8, i8); 4] = [(1, 1), (1, -1), (-1, -1), (-1, 1)];
+        const ROOK_DIRECTIONS: [(i8, i8); 4] = [(0, 1), (0, -1), (1, 0), (-1, 0)];
+        const QUEEN_DIRECTIONS: [(i8, i8); 8] = [
+            (1, 1),
+            (1, -1),
+            (-1, -1),
+            (-1, 1),
+            (0, 1),
+            (0, -1),
+            (1, 0),
+            (-1, 0),
+        ];
+
+        let directions: &[(i8, i8)] = match piece.kind {
+            PieceType::Bishop => &BISHOP_DIRECTIONS,
+            PieceType::Rook => &ROOK_DIRECTIONS,
+            PieceType::Queen => &QUEEN_DIRECTIONS,
+            _ => panic!("Not a sliding piece"),
+        };
+
         let file = square.file();
         let rank = square.rank();
 
         let mut moves = Vec::new();
 
-        const BISHOPT_DIRECTION: [(i8, i8); 4] = [(1, 1), (1, -1), (-1, -1), (-1, 1)];
-        for (direction_file, direction_rank) in BISHOPT_DIRECTION {
+        for (direction_file, direction_rank) in directions {
             for square_inc in 1..8 {
                 let Some(target_square) = Square::from_file_rank(
                     file + (direction_file * square_inc),
@@ -221,7 +278,7 @@ impl Game {
                 };
 
                 match self.piece_at(target_square) {
-                    Some(p) if p.side == side => break,
+                    Some(p) if p.side == piece.side => break,
                     Some(_) => {
                         moves.push(target_square);
                         break;
@@ -231,6 +288,36 @@ impl Game {
             }
         }
         moves
+    }
+
+    fn get_bishop_pseudo_legal_moves(&self, side: Side, square: Square) -> Vec<Square> {
+        self.get_sliding_piece_legal_moves(
+            Piece {
+                side,
+                kind: PieceType::Bishop,
+            },
+            square,
+        )
+    }
+
+    fn get_rook_pseudo_legal_moves(&self, side: Side, square: Square) -> Vec<Square> {
+        self.get_sliding_piece_legal_moves(
+            Piece {
+                side,
+                kind: PieceType::Rook,
+            },
+            square,
+        )
+    }
+
+    fn get_queen_pseudo_legal_moves(&self, side: Side, square: Square) -> Vec<Square> {
+        self.get_sliding_piece_legal_moves(
+            Piece {
+                side,
+                kind: PieceType::Queen,
+            },
+            square,
+        )
     }
 }
 
@@ -470,7 +557,7 @@ mod tests {
     }
 
     #[test]
-    fn bishop_can_move_in_all_squares_until_find_first_eneny_piece() {
+    fn bishop_can_move_in_all_squares_until_finds_first_eneny_piece() {
         let game = Game::new_game_from_fen("8/1K6/2n5/8/4B3/8/8/N7 w - - 0 1");
         let bishop = Piece {
             side: Side::White,
@@ -496,7 +583,7 @@ mod tests {
     }
 
     #[test]
-    fn bishop_can_move_in_all_squares_until_find_first_eneny_piece_or_friendly_piece() {
+    fn bishop_can_move_in_all_squares_until_finds_first_eneny_piece_or_friendly_piece() {
         let game = Game::new_game_from_fen("8/1K6/1N6/4q3/3b4/4k3/8/N7 w - - 0 1");
         let bishop = Piece {
             side: Side::Black,
@@ -505,6 +592,129 @@ mod tests {
         let moves = moves_set(&game, bishop, Square::D4);
         let expected: HashSet<Square> =
             [Square::C5, Square::B6, Square::C3, Square::B2, Square::A1]
+                .into_iter()
+                .collect();
+        assert_eq!(moves, expected);
+    }
+
+    #[test]
+    fn rook_can_move_in_all_squares_until_finds_friendly_piece() {
+        let game = Game::new_game_from_fen("8/1K6/1N6/4q3/4b3/4r3/8/N7 w - - 0 1");
+        let rook = Piece {
+            side: Side::Black,
+            kind: PieceType::Rook,
+        };
+        let moves = moves_set(&game, rook, Square::E3);
+        let expected: HashSet<Square> = [
+            Square::E2,
+            Square::E1,
+            Square::F3,
+            Square::G3,
+            Square::H3,
+            Square::D3,
+            Square::C3,
+            Square::B3,
+            Square::A3,
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(moves, expected);
+    }
+
+    #[test]
+    fn rook_can_move_in_all_squares_until_finds_first_eneny_piece_or_friendly_piece() {
+        let game = Game::new_game_from_fen("8/1K6/1N6/4q3/4R3/4r3/8/N7 w - - 0 1");
+        let rook = Piece {
+            side: Side::White,
+            kind: PieceType::Rook,
+        };
+        let moves = moves_set(&game, rook, Square::E4);
+        let expected: HashSet<Square> = [
+            Square::E5,
+            Square::E3,
+            Square::F4,
+            Square::G4,
+            Square::H4,
+            Square::D4,
+            Square::C4,
+            Square::B4,
+            Square::A4,
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(moves, expected);
+    }
+
+    #[test]
+    fn queen_can_move_in_all_squares_until_finds_first_eneny_piece_or_friendly_piece() {
+        let game = Game::new_game_from_fen("7p/1K6/1N6/4q3/4R3/4r3/8/N7 w - - 0 1");
+        let queen = Piece {
+            side: Side::Black,
+            kind: PieceType::Queen,
+        };
+        let moves = moves_set(&game, queen, Square::E5);
+        let expected: HashSet<Square> = [
+            Square::F6,
+            Square::G7,
+            Square::F4,
+            Square::G3,
+            Square::H2,
+            Square::D4,
+            Square::C3,
+            Square::B2,
+            Square::A1,
+            Square::D6,
+            Square::C7,
+            Square::B8,
+            Square::E6,
+            Square::E7,
+            Square::E8,
+            Square::E4,
+            Square::F5,
+            Square::G5,
+            Square::H5,
+            Square::D5,
+            Square::C5,
+            Square::B5,
+            Square::A5,
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(moves, expected);
+    }
+
+    #[test]
+    fn king_can_move_in_all_squares_but_not_on_friendly_piece() {
+        let game = Game::new_game_from_fen("8/1K6/1N6/4q3/4R3/4r3/8/N7 w - - 0 1");
+        let king = Piece {
+            side: Side::White,
+            kind: PieceType::King,
+        };
+        let moves = moves_set(&game, king, Square::B7);
+        let expected: HashSet<Square> = [
+            Square::C8,
+            Square::C7,
+            Square::C6,
+            Square::A6,
+            Square::A7,
+            Square::A8,
+            Square::B8,
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(moves, expected);
+    }
+
+    #[test]
+    fn king_can_move_in_all_squares_and_capture_enemy_pieces() {
+        let game = Game::new_game_from_fen("8/1K6/1N6/4q3/4R3/4r3/8/Nk6 w - - 0 1");
+        let king = Piece {
+            side: Side::Black,
+            kind: PieceType::King,
+        };
+        let moves = moves_set(&game, king, Square::B1);
+        let expected: HashSet<Square> =
+            [Square::C2, Square::C1, Square::A1, Square::A2, Square::B2]
                 .into_iter()
                 .collect();
         assert_eq!(moves, expected);
