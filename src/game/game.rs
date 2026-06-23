@@ -1,8 +1,6 @@
-use std::io::Error;
-
 use crate::{
     game::{
-        domain::{Board, Piece, PieceType, Side, Square},
+        domain::{Board, Move, Piece, PieceType, Side, Square},
         game_state::GameState,
     },
     inputs::handler::InputStatus,
@@ -13,6 +11,7 @@ pub struct Game {
 }
 
 impl Game {
+    // region: game
     pub fn new() -> Self {
         Self {
             game_state: GameState::new(),
@@ -31,46 +30,21 @@ impl Game {
         }
     }
 
-    pub fn get_piece(&self, square: Square) -> Option<Piece> {
-        self.game_state.board[square as usize]
-    }
+    // endregion
 
-    fn set_piece(&mut self, square: Square, piece: Piece) {
-        self.game_state.board[square as usize] = Some(piece);
-    }
-
-    fn clear_square(&mut self, square: Square) -> bool {
-        if self.get_piece(square).is_none() {
-            return false;
-        };
-
-        self.game_state.board[square as usize] = None;
-        true
-    }
-
-    fn move_piece(&mut self, from: Square, to: Square) -> bool {
-        let Some(piece) = self.get_piece(from) else {
-            return false;
-        };
-
-        // Check if legal move
-
-        self.set_piece(to, piece);
-        self.clear_square(from);
-        true
-    }
-
+    // region: Inputs
     pub fn parse_input(&mut self, input_status: &InputStatus) {
         match input_status {
             InputStatus::Chilling => { /* just chilling */ }
             InputStatus::Dragging(drag) => {
+                // Draw dots for legal moves
                 println!(
                     "Moves: {:?}",
                     self.get_pseudo_legal_moves(drag.piece, drag.from)
                 );
+                println!("Side -> {}", self.is_square_under_attack(drag.from));
             }
             InputStatus::Releasing(drag, square) => {
-                // controlla se square esiste o è uguale alla partenza
                 if let Some(square) = *square {
                     if drag.from != square {
                         self.move_piece(drag.from, square);
@@ -118,10 +92,140 @@ impl Game {
             }
         }
 
-        // TODO parse all the other parts
         let mut game_state = GameState::new();
         game_state.board = board;
+
+        game_state.side = match fen_parts[1].to_ascii_lowercase().as_str() {
+            "b" => Side::Black,
+            "w" => Side::White,
+            _ => panic!("Invalid side type in FEN"),
+        };
+
+        // TODO parse all the other parts
+
         game_state
+    }
+
+    // endregion
+
+    // region: moves
+
+    pub fn get_piece(&self, square: Square) -> Option<Piece> {
+        self.game_state.board[square as usize]
+    }
+
+    fn set_piece(&mut self, square: Square, piece: Piece) {
+        self.game_state.board[square as usize] = Some(piece);
+    }
+
+    fn clear_square(&mut self, square: Square) -> bool {
+        if self.get_piece(square).is_none() {
+            return false;
+        };
+
+        self.game_state.board[square as usize] = None;
+        true
+    }
+
+    fn move_piece(&mut self, from: Square, to: Square) -> bool {
+        let Some(piece) = self.get_piece(from) else {
+            return false;
+        };
+
+        self.set_piece(to, piece);
+        self.clear_square(from);
+        true
+    }
+
+    fn make_move(&mut self, mv: Move) -> bool {
+        if self.move_piece(mv.from, mv.to) {
+            // Check if legal moves
+
+            // Check enpassant
+
+            // Check castle
+            true
+        } else {
+            false
+        }
+    }
+
+    fn get_squares_under_attacks(&self) -> Vec<Square> {
+        let mut attacked_squares = Vec::new();
+
+        for i in 0..64u8 {
+            let square: Square = unsafe { std::mem::transmute(i) };
+            if self.is_square_under_attack(square) {
+                attacked_squares.push(square);
+            }
+        }
+        attacked_squares
+    }
+
+    fn is_square_under_attack(&self, square: Square) -> bool {
+        let file = square.file();
+        let rank = square.rank();
+        let attacker = if self.game_state.side == Side::White {
+            Side::Black
+        } else {
+            Side::White
+        };
+        let direction = self.game_state.side.direction();
+
+        // By pawns
+        for pawn_attacking_deltas in [-1, 1] {
+            let Some(pawn_attacking_square_candidate) =
+                Square::from_file_rank(file + pawn_attacking_deltas, rank + direction)
+            else {
+                continue;
+            };
+            if let Some(pawn_attacker_piece_candidate) =
+                self.piece_at(pawn_attacking_square_candidate)
+            {
+                if pawn_attacker_piece_candidate.kind == PieceType::Pawn
+                    && pawn_attacker_piece_candidate.side == attacker
+                {
+                    return true;
+                }
+            }
+        }
+
+        // By Knight
+        let knight_deltas: [(i8, i8); 8] = [
+            (1, 2),
+            (2, 1),
+            (2, -1),
+            (1, -2),
+            (-1, -2),
+            (-2, -1),
+            (-2, 1),
+            (-1, 2),
+        ];
+
+        for (delta_file, delta_rank) in knight_deltas {
+            let Some(target_square) =
+                Square::from_file_rank(square.file() + delta_file, square.rank() + delta_rank)
+            else {
+                continue;
+            };
+            match self.piece_at(target_square) {
+                Some(knight_attacker_piece_candidate)
+                    if knight_attacker_piece_candidate.kind == PieceType::Knight
+                        && knight_attacker_piece_candidate.side == attacker =>
+                {
+                    return true;
+                }
+                _ => {
+                    continue;
+                }
+            }
+        }
+
+        false
+    }
+
+    fn piece_at(&self, square: Square) -> Option<Piece> {
+        self.game_state.board[square as usize]
     }
 
     pub fn get_pseudo_legal_moves(&self, piece: Piece, square: Square) -> Vec<Square> {
@@ -133,10 +237,6 @@ impl Game {
             PieceType::Queen => self.get_queen_pseudo_legal_moves(piece.side, square),
             PieceType::King => self.get_king_pseudo_legal_moves(piece.side, square),
         }
-    }
-
-    fn piece_at(&self, square: Square) -> Option<Piece> {
-        self.game_state.board[square as usize]
     }
 
     fn get_leaper_piece_pseudo_legal_moves(&self, piece: Piece, square: Square) -> Vec<Square> {
@@ -193,13 +293,22 @@ impl Game {
     }
 
     fn get_king_pseudo_legal_moves(&self, side: Side, square: Square) -> Vec<Square> {
-        self.get_leaper_piece_pseudo_legal_moves(
+        let leaper_moves = self.get_leaper_piece_pseudo_legal_moves(
             Piece {
                 side,
                 kind: PieceType::King,
             },
             square,
-        )
+        );
+
+        // Castle
+        let rights = self.game_state.available_castle;
+        let (kingside, queenside) = match side {
+            Side::White => (rights.white_kingside, rights.white_queenside),
+            Side::Black => (rights.black_kingside, rights.black_queenside),
+        };
+
+        leaper_moves // TODO
     }
 
     fn get_pawn_pseudo_legal_moves(&self, side: Side, square: Square) -> Vec<Square> {
@@ -319,6 +428,8 @@ impl Game {
             square,
         )
     }
+
+    // endregion
 }
 
 #[cfg(test)]
@@ -718,5 +829,83 @@ mod tests {
                 .into_iter()
                 .collect();
         assert_eq!(moves, expected);
+    }
+
+    // attacked squares
+
+    fn to_hash_set<I: IntoIterator<Item = Square>>(squares: I) -> HashSet<Square> {
+        squares.into_iter().collect()
+    }
+
+    #[test]
+    fn squares_are_under_attack_by_white_pawn() {
+        let game = Game::new_game_from_fen("8/8/8/8/3P4/8/8/8 b - - 0 1");
+        let squares = to_hash_set(game.get_squares_under_attacks());
+        let expected = to_hash_set([Square::C5, Square::E5]);
+
+        assert_eq!(squares, expected);
+    }
+
+    #[test]
+    fn squares_are_under_attack_by_white_pawns() {
+        let game = Game::new_game_from_fen("8/1P6/8/8/8/8/6P1/8 b - - 0 1");
+        let squares = to_hash_set(game.get_squares_under_attacks());
+        let expected = to_hash_set([Square::A8, Square::C8, Square::F3, Square::H3]);
+
+        assert_eq!(squares, expected);
+    }
+
+    #[test]
+    fn no_squares_are_under_attack_by_white_pawns() {
+        let game = Game::new_game_from_fen("8/1P6/8/8/8/8/6P1/8 w - - 0 1");
+        let squares = to_hash_set(game.get_squares_under_attacks());
+        let expected = to_hash_set([]);
+
+        assert_eq!(squares, expected);
+    }
+
+    #[test]
+    fn squares_are_under_attack_by_black_pawn() {
+        let game = Game::new_game_from_fen("8/8/8/8/3p4/8/8/8 w - - 0 1");
+        let squares = to_hash_set(game.get_squares_under_attacks());
+        let expected = to_hash_set([Square::C3, Square::E3]);
+
+        assert_eq!(squares, expected);
+    }
+
+    #[test]
+    fn squares_are_under_attack_by_black_pawns() {
+        let game = Game::new_game_from_fen("8/7p/8/8/8/1p6/8/8 w - - 0 1");
+        let squares = to_hash_set(game.get_squares_under_attacks());
+        let expected = to_hash_set([Square::G6, Square::A2, Square::C2]);
+
+        assert_eq!(squares, expected);
+    }
+
+    #[test]
+    fn no_squares_are_under_attack_by_black_pawns() {
+        let game = Game::new_game_from_fen("8/7p/8/8/8/1p6/8/8 b - - 0 1");
+        let squares = to_hash_set(game.get_squares_under_attacks());
+        let expected = to_hash_set([]);
+
+        assert_eq!(squares, expected);
+    }
+
+    #[test]
+    fn squares_are_under_attack_by_white_knight() {
+        let game = Game::new_game_from_fen("8/8/8/4N3/8/8/8/8 b - - 0 1");
+        let squares = to_hash_set(game.get_squares_under_attacks());
+        let expected = to_hash_set([
+            Square::D3,
+            Square::F3,
+            Square::G4,
+            Square::G6,
+            Square::F7,
+            Square::D7,
+            Square::C6,
+            Square::C4,
+        ]);
+
+        assert_eq!(squares, expected);
     }
 }

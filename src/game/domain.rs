@@ -132,6 +132,13 @@ pub struct Piece {
     pub kind: PieceType,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Move {
+    pub piece: Piece,
+    pub from: Square,
+    pub to: Square,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
