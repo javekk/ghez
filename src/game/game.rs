@@ -1,7 +1,7 @@
 use crate::{
     game::{
         domain::{Board, Move, Piece, PieceType, Side, Square},
-        game_state::GameState,
+        game_state::{CastleRights, GameState},
     },
     inputs::handler::InputStatus,
 };
@@ -99,6 +99,14 @@ impl Game {
             "b" => Side::Black,
             "w" => Side::White,
             _ => panic!("Invalid side type in FEN"),
+        };
+
+        let castle_field = fen_parts[2];
+        game_state.available_castle = CastleRights {
+            white_kingside: castle_field.contains('K'),
+            white_queenside: castle_field.contains('Q'),
+            black_kingside: castle_field.contains('k'),
+            black_queenside: castle_field.contains('q'),
         };
 
         // TODO parse all the other parts
@@ -243,6 +251,53 @@ impl Game {
             }
         }
 
+        // By bishop (or Queen)
+        let bishop_directions: [(i8, i8); 4] = [(1, 1), (1, -1), (-1, -1), (-1, 1)];
+
+        for (direction_file, direction_rank) in bishop_directions {
+            for square_inc in 1..8 {
+                let Some(target_square) = Square::from_file_rank(
+                    square.file() + (direction_file * square_inc),
+                    square.rank() + (direction_rank * square_inc),
+                ) else {
+                    break;
+                };
+
+                if let Some(piece) = self.piece_at(target_square) {
+                    if (piece.kind == PieceType::Bishop || piece.kind == PieceType::Queen)
+                        && piece.side == attacker
+                    {
+                        return true;
+                    }
+
+                    break;
+                }
+            }
+        }
+
+        // By Rook (or Queen)
+        let rook_directions: [(i8, i8); 4] = [(0, 1), (0, -1), (1, 0), (-1, 0)];
+        for (direction_file, direction_rank) in rook_directions {
+            for square_inc in 1..8 {
+                let Some(target_square) = Square::from_file_rank(
+                    square.file() + (direction_file * square_inc),
+                    square.rank() + (direction_rank * square_inc),
+                ) else {
+                    break;
+                };
+
+                if let Some(piece) = self.piece_at(target_square) {
+                    if (piece.kind == PieceType::Rook || piece.kind == PieceType::Queen)
+                        && piece.side == attacker
+                    {
+                        return true;
+                    }
+
+                    break;
+                }
+            }
+        }
+
         false
     }
 
@@ -252,16 +307,16 @@ impl Game {
 
     pub fn get_pseudo_legal_moves(&self, piece: Piece, square: Square) -> Vec<Square> {
         match piece.kind {
-            PieceType::Pawn => self.get_pawn_pseudo_legal_moves(piece.side, square),
-            PieceType::Knight => self.get_knight_pseudo_legal_moves(piece.side, square),
-            PieceType::Bishop => self.get_bishop_pseudo_legal_moves(piece.side, square),
-            PieceType::Rook => self.get_rook_pseudo_legal_moves(piece.side, square),
-            PieceType::Queen => self.get_queen_pseudo_legal_moves(piece.side, square),
-            PieceType::King => self.get_king_pseudo_legal_moves(piece.side, square),
+            PieceType::Pawn => self.get_pawn_pseudo_legal_moves(square),
+            PieceType::Knight => self.get_knight_pseudo_legal_moves(square),
+            PieceType::Bishop => self.get_bishop_pseudo_legal_moves(square),
+            PieceType::Rook => self.get_rook_pseudo_legal_moves(square),
+            PieceType::Queen => self.get_queen_pseudo_legal_moves(square),
+            PieceType::King => self.get_king_pseudo_legal_moves(square),
         }
     }
 
-    fn get_leaper_piece_pseudo_legal_moves(&self, piece: Piece, square: Square) -> Vec<Square> {
+    fn get_leaper_piece_pseudo_legal_moves(&self, kind: PieceType, square: Square) -> Vec<Square> {
         const KNIGHT_DELTAS: [(i8, i8); 8] = [
             (1, 2),
             (2, 1),
@@ -283,12 +338,13 @@ impl Game {
             (0, 1),
         ];
 
-        let directions: &[(i8, i8)] = match piece.kind {
+        let directions: &[(i8, i8)] = match kind {
             PieceType::Knight => &KNIGHT_DELTAS,
             PieceType::King => &KING_DELTAS,
             _ => panic!("Not a leaper piece"),
         };
 
+        let side = self.game_state.side;
         let mut moves = Vec::new();
         for (delta_file, delta_rank) in directions {
             let Some(target_square) =
@@ -297,31 +353,20 @@ impl Game {
                 continue;
             };
             match self.piece_at(target_square) {
-                Some(target_piece) if target_piece.side == piece.side => {}
+                Some(target_piece) if target_piece.side == side => {}
                 _ => moves.push(target_square),
             }
         }
         moves
     }
 
-    fn get_knight_pseudo_legal_moves(&self, side: Side, square: Square) -> Vec<Square> {
-        self.get_leaper_piece_pseudo_legal_moves(
-            Piece {
-                side,
-                kind: PieceType::Knight,
-            },
-            square,
-        )
+    fn get_knight_pseudo_legal_moves(&self, square: Square) -> Vec<Square> {
+        self.get_leaper_piece_pseudo_legal_moves(PieceType::Knight, square)
     }
 
-    fn get_king_pseudo_legal_moves(&self, side: Side, square: Square) -> Vec<Square> {
-        let leaper_moves = self.get_leaper_piece_pseudo_legal_moves(
-            Piece {
-                side,
-                kind: PieceType::King,
-            },
-            square,
-        );
+    fn get_king_pseudo_legal_moves(&self, square: Square) -> Vec<Square> {
+        let side = self.game_state.side;
+        let mut leaper_moves = self.get_leaper_piece_pseudo_legal_moves(PieceType::King, square);
 
         // Castle
         let rights = self.game_state.available_castle;
@@ -330,10 +375,61 @@ impl Game {
             Side::Black => (rights.black_kingside, rights.black_queenside),
         };
 
+        if !self.is_square_under_attack(square) {
+            if kingside {
+                match side {
+                    Side::White => {
+                        if self.piece_at(Square::F1).is_none()
+                            && self.piece_at(Square::G1).is_none()
+                            && !self.is_square_under_attack(Square::F1)
+                            && !self.is_square_under_attack(Square::G1)
+                        {
+                            leaper_moves.push(Square::G1)
+                        }
+                    }
+                    Side::Black => {
+                        if self.piece_at(Square::F8).is_none()
+                            && self.piece_at(Square::G8).is_none()
+                            && !self.is_square_under_attack(Square::F8)
+                            && !self.is_square_under_attack(Square::G8)
+                        {
+                            leaper_moves.push(Square::G8)
+                        }
+                    }
+                };
+            }
+
+            if queenside {
+                match side {
+                    Side::White => {
+                        if self.piece_at(Square::B1).is_none()
+                            && self.piece_at(Square::C1).is_none()
+                            && self.piece_at(Square::D1).is_none()
+                            && !self.is_square_under_attack(Square::D1)
+                            && !self.is_square_under_attack(Square::C1)
+                        {
+                            leaper_moves.push(Square::C1)
+                        }
+                    }
+                    Side::Black => {
+                        if self.piece_at(Square::B8).is_none()
+                            && self.piece_at(Square::C8).is_none()
+                            && self.piece_at(Square::D8).is_none()
+                            && !self.is_square_under_attack(Square::D8)
+                            && !self.is_square_under_attack(Square::C8)
+                        {
+                            leaper_moves.push(Square::C8)
+                        }
+                    }
+                };
+            }
+        }
+
         leaper_moves // TODO
     }
 
-    fn get_pawn_pseudo_legal_moves(&self, side: Side, square: Square) -> Vec<Square> {
+    fn get_pawn_pseudo_legal_moves(&self, square: Square) -> Vec<Square> {
+        let side = self.game_state.side;
         let file = square.file();
         let rank = square.rank();
         let direction = side.direction();
@@ -373,7 +469,7 @@ impl Game {
         moves
     }
 
-    fn get_sliding_piece_legal_moves(&self, piece: Piece, square: Square) -> Vec<Square> {
+    fn get_sliding_piece_legal_moves(&self, kind: PieceType, square: Square) -> Vec<Square> {
         const BISHOP_DIRECTIONS: [(i8, i8); 4] = [(1, 1), (1, -1), (-1, -1), (-1, 1)];
         const ROOK_DIRECTIONS: [(i8, i8); 4] = [(0, 1), (0, -1), (1, 0), (-1, 0)];
         const QUEEN_DIRECTIONS: [(i8, i8); 8] = [
@@ -387,13 +483,14 @@ impl Game {
             (-1, 0),
         ];
 
-        let directions: &[(i8, i8)] = match piece.kind {
+        let directions: &[(i8, i8)] = match kind {
             PieceType::Bishop => &BISHOP_DIRECTIONS,
             PieceType::Rook => &ROOK_DIRECTIONS,
             PieceType::Queen => &QUEEN_DIRECTIONS,
             _ => panic!("Not a sliding piece"),
         };
 
+        let side = self.game_state.side;
         let file = square.file();
         let rank = square.rank();
 
@@ -409,7 +506,7 @@ impl Game {
                 };
 
                 match self.piece_at(target_square) {
-                    Some(p) if p.side == piece.side => break,
+                    Some(p) if p.side == side => break,
                     Some(_) => {
                         moves.push(target_square);
                         break;
@@ -421,34 +518,16 @@ impl Game {
         moves
     }
 
-    fn get_bishop_pseudo_legal_moves(&self, side: Side, square: Square) -> Vec<Square> {
-        self.get_sliding_piece_legal_moves(
-            Piece {
-                side,
-                kind: PieceType::Bishop,
-            },
-            square,
-        )
+    fn get_bishop_pseudo_legal_moves(&self, square: Square) -> Vec<Square> {
+        self.get_sliding_piece_legal_moves(PieceType::Bishop, square)
     }
 
-    fn get_rook_pseudo_legal_moves(&self, side: Side, square: Square) -> Vec<Square> {
-        self.get_sliding_piece_legal_moves(
-            Piece {
-                side,
-                kind: PieceType::Rook,
-            },
-            square,
-        )
+    fn get_rook_pseudo_legal_moves(&self, square: Square) -> Vec<Square> {
+        self.get_sliding_piece_legal_moves(PieceType::Rook, square)
     }
 
-    fn get_queen_pseudo_legal_moves(&self, side: Side, square: Square) -> Vec<Square> {
-        self.get_sliding_piece_legal_moves(
-            Piece {
-                side,
-                kind: PieceType::Queen,
-            },
-            square,
-        )
+    fn get_queen_pseudo_legal_moves(&self, square: Square) -> Vec<Square> {
+        self.get_sliding_piece_legal_moves(PieceType::Queen, square)
     }
 
     // endregion
@@ -717,7 +796,7 @@ mod tests {
 
     #[test]
     fn bishop_can_move_in_all_squares_until_finds_first_eneny_piece_or_friendly_piece() {
-        let game = Game::new_game_from_fen("8/1K6/1N6/4q3/3b4/4k3/8/N7 w - - 0 1");
+        let game = Game::new_game_from_fen("8/1K6/1N6/4q3/3b4/4k3/8/N7 b - - 0 1");
         let bishop = Piece {
             side: Side::Black,
             kind: PieceType::Bishop,
@@ -732,7 +811,7 @@ mod tests {
 
     #[test]
     fn rook_can_move_in_all_squares_until_finds_friendly_piece() {
-        let game = Game::new_game_from_fen("8/1K6/1N6/4q3/4b3/4r3/8/N7 w - - 0 1");
+        let game = Game::new_game_from_fen("8/1K6/1N6/4q3/4b3/4r3/8/N7 b - - 0 1");
         let rook = Piece {
             side: Side::Black,
             kind: PieceType::Rook,
@@ -780,7 +859,7 @@ mod tests {
 
     #[test]
     fn queen_can_move_in_all_squares_until_finds_first_eneny_piece_or_friendly_piece() {
-        let game = Game::new_game_from_fen("7p/1K6/1N6/4q3/4R3/4r3/8/N7 w - - 0 1");
+        let game = Game::new_game_from_fen("7p/1K6/1N6/4q3/4R3/4r3/8/N7 b - - 0 1");
         let queen = Piece {
             side: Side::Black,
             kind: PieceType::Queen,
@@ -840,7 +919,7 @@ mod tests {
 
     #[test]
     fn king_can_move_in_all_squares_and_capture_enemy_pieces() {
-        let game = Game::new_game_from_fen("8/1K6/1N6/4q3/4R3/4r3/8/Nk6 w - - 0 1");
+        let game = Game::new_game_from_fen("8/1K6/1N6/4q3/4R3/4r3/8/Nk6 b - - 0 1");
         let king = Piece {
             side: Side::Black,
             kind: PieceType::King,
@@ -1014,6 +1093,390 @@ mod tests {
         let game = Game::new_game_from_fen("k7/8/8/4K3/8/8/8/8 w - - 0 1");
         let squares = to_hash_set(game.get_squares_under_attacks());
         let expected = to_hash_set([Square::A7, Square::B7, Square::B8]);
+
+        assert_eq!(squares, expected);
+    }
+
+    #[test]
+    fn squares_are_under_attack_by_white_bishop() {
+        let game = Game::new_game_from_fen("8/8/8/3B4/8/8/8/8 b - - 0 1");
+        let squares = to_hash_set(game.get_squares_under_attacks());
+        let expected = to_hash_set([
+            Square::A2,
+            Square::B3,
+            Square::C4,
+            Square::E6,
+            Square::F7,
+            Square::G8,
+            Square::A8,
+            Square::B7,
+            Square::C6,
+            Square::E4,
+            Square::F3,
+            Square::G2,
+            Square::H1,
+        ]);
+
+        assert_eq!(squares, expected);
+    }
+
+    #[test]
+    fn white_bishop_ray_blocked_by_friendly_piece() {
+        let game = Game::new_game_from_fen("8/5P2/8/3B4/8/8/8/8 b - - 0 1");
+        let squares = to_hash_set(game.get_squares_under_attacks());
+        let expected = to_hash_set([
+            Square::A2,
+            Square::B3,
+            Square::C4,
+            Square::E6,
+            Square::F7,
+            Square::A8,
+            Square::B7,
+            Square::C6,
+            Square::E4,
+            Square::F3,
+            Square::G2,
+            Square::H1,
+            Square::E8,
+            Square::G8,
+        ]);
+
+        assert_eq!(squares, expected);
+    }
+
+    #[test]
+    fn white_bishop_ray_blocked_by_enemy_piece() {
+        let game = Game::new_game_from_fen("8/5p2/8/3B4/8/8/8/8 b - - 0 1");
+        let squares = to_hash_set(game.get_squares_under_attacks());
+        let expected = to_hash_set([
+            Square::A2,
+            Square::B3,
+            Square::C4,
+            Square::E6,
+            Square::F7,
+            Square::A8,
+            Square::B7,
+            Square::C6,
+            Square::E4,
+            Square::F3,
+            Square::G2,
+            Square::H1,
+        ]);
+
+        assert_eq!(squares, expected);
+    }
+
+    #[test]
+    fn squares_are_under_attack_by_black_bishop() {
+        let game = Game::new_game_from_fen("8/8/8/3b4/8/8/8/8 w - - 0 1");
+        let squares = to_hash_set(game.get_squares_under_attacks());
+        let expected = to_hash_set([
+            Square::A2,
+            Square::B3,
+            Square::C4,
+            Square::E6,
+            Square::F7,
+            Square::G8,
+            Square::A8,
+            Square::B7,
+            Square::C6,
+            Square::E4,
+            Square::F3,
+            Square::G2,
+            Square::H1,
+        ]);
+
+        assert_eq!(squares, expected);
+    }
+
+    #[test]
+    fn no_squares_are_under_attack_by_white_bishop_wrong_side_to_move() {
+        let game = Game::new_game_from_fen("8/8/8/3B4/8/8/8/8 w - - 0 1");
+        let squares = to_hash_set(game.get_squares_under_attacks());
+        let expected = to_hash_set([]);
+
+        assert_eq!(squares, expected);
+    }
+
+    #[test]
+    fn squares_are_under_attack_by_white_rook() {
+        let game = Game::new_game_from_fen("8/8/8/3R4/8/8/8/8 b - - 0 1");
+        let squares = to_hash_set(game.get_squares_under_attacks());
+        let expected = to_hash_set([
+            Square::A5,
+            Square::B5,
+            Square::C5,
+            Square::E5,
+            Square::F5,
+            Square::G5,
+            Square::H5,
+            Square::D1,
+            Square::D2,
+            Square::D3,
+            Square::D4,
+            Square::D6,
+            Square::D7,
+            Square::D8,
+        ]);
+
+        assert_eq!(squares, expected);
+    }
+
+    #[test]
+    fn white_rook_ray_blocked_by_friendly_piece() {
+        let game = Game::new_game_from_fen("8/3P4/8/3R4/8/8/8/8 b - - 0 1");
+        let squares = to_hash_set(game.get_squares_under_attacks());
+        let expected = to_hash_set([
+            Square::A5,
+            Square::B5,
+            Square::C5,
+            Square::E5,
+            Square::F5,
+            Square::G5,
+            Square::H5,
+            Square::D1,
+            Square::D2,
+            Square::D3,
+            Square::D4,
+            Square::D6,
+            Square::D7,
+            Square::C8,
+            Square::E8,
+        ]);
+
+        assert_eq!(squares, expected);
+    }
+
+    #[test]
+    fn white_rook_ray_blocked_by_enemy_piece() {
+        let game = Game::new_game_from_fen("8/3p4/8/3R4/8/8/8/8 b - - 0 1");
+        let squares = to_hash_set(game.get_squares_under_attacks());
+        let expected = to_hash_set([
+            Square::A5,
+            Square::B5,
+            Square::C5,
+            Square::E5,
+            Square::F5,
+            Square::G5,
+            Square::H5,
+            Square::D1,
+            Square::D2,
+            Square::D3,
+            Square::D4,
+            Square::D6,
+            Square::D7,
+        ]);
+
+        assert_eq!(squares, expected);
+    }
+
+    #[test]
+    fn squares_are_under_attack_by_black_rook_in_corner() {
+        let game = Game::new_game_from_fen("r7/8/8/8/8/8/8/8 w - - 0 1");
+        let squares = to_hash_set(game.get_squares_under_attacks());
+        let expected = to_hash_set([
+            Square::A1,
+            Square::A2,
+            Square::A3,
+            Square::A4,
+            Square::A5,
+            Square::A6,
+            Square::A7,
+            Square::B8,
+            Square::C8,
+            Square::D8,
+            Square::E8,
+            Square::F8,
+            Square::G8,
+            Square::H8,
+        ]);
+
+        assert_eq!(squares, expected);
+    }
+
+    #[test]
+    fn squares_are_under_attack_by_white_queen() {
+        let game = Game::new_game_from_fen("8/8/8/3Q4/8/8/8/8 b - - 0 1");
+        let squares = to_hash_set(game.get_squares_under_attacks());
+        let expected = to_hash_set([
+            Square::A5,
+            Square::B5,
+            Square::C5,
+            Square::E5,
+            Square::F5,
+            Square::G5,
+            Square::H5,
+            Square::D1,
+            Square::D2,
+            Square::D3,
+            Square::D4,
+            Square::D6,
+            Square::D7,
+            Square::D8,
+            Square::A2,
+            Square::B3,
+            Square::C4,
+            Square::E6,
+            Square::F7,
+            Square::G8,
+            Square::A8,
+            Square::B7,
+            Square::C6,
+            Square::E4,
+            Square::F3,
+            Square::G2,
+            Square::H1,
+        ]);
+
+        assert_eq!(squares, expected);
+    }
+
+    #[test]
+    fn white_king_can_castle_kingside_when_path_clear() {
+        let game = Game::new_game_from_fen("4k3/8/8/8/8/8/8/4K2R w K - 0 1");
+        let king = Piece {
+            side: Side::White,
+            kind: PieceType::King,
+        };
+        let moves = moves_set(&game, king, Square::E1);
+        assert!(moves.contains(&Square::G1));
+    }
+
+    #[test]
+    fn white_king_cannot_castle_kingside_without_rights() {
+        let game = Game::new_game_from_fen("4k3/8/8/8/8/8/8/4K2R w - - 0 1");
+        let king = Piece {
+            side: Side::White,
+            kind: PieceType::King,
+        };
+        let moves = moves_set(&game, king, Square::E1);
+        assert!(!moves.contains(&Square::G1));
+    }
+
+    #[test]
+    fn white_king_cannot_castle_kingside_when_path_occupied() {
+        let game = Game::new_game_from_fen("4k3/8/8/8/8/8/8/4KB1R w K - 0 1");
+        let king = Piece {
+            side: Side::White,
+            kind: PieceType::King,
+        };
+        let moves = moves_set(&game, king, Square::E1);
+        assert!(!moves.contains(&Square::G1));
+    }
+
+    #[test]
+    fn white_king_cannot_castle_kingside_when_transit_attacked() {
+        let game = Game::new_game_from_fen("4kr2/8/8/8/8/8/8/4K2R w K - 0 1");
+        let king = Piece {
+            side: Side::White,
+            kind: PieceType::King,
+        };
+        let moves = moves_set(&game, king, Square::E1);
+        assert!(!moves.contains(&Square::G1));
+    }
+
+    #[test]
+    fn white_king_cannot_castle_kingside_when_destination_attacked() {
+        let game = Game::new_game_from_fen("4k1r1/8/8/8/8/8/8/4K2R w K - 0 1");
+        let king = Piece {
+            side: Side::White,
+            kind: PieceType::King,
+        };
+        let moves = moves_set(&game, king, Square::E1);
+        assert!(!moves.contains(&Square::G1));
+    }
+
+    #[test]
+    fn white_king_cannot_castle_when_in_check() {
+        let game = Game::new_game_from_fen("4k3/4r3/8/8/8/8/8/4K2R w K - 0 1");
+        let king = Piece {
+            side: Side::White,
+            kind: PieceType::King,
+        };
+        let moves = moves_set(&game, king, Square::E1);
+        assert!(!moves.contains(&Square::G1));
+    }
+
+    #[test]
+    fn white_king_can_castle_queenside_when_path_clear() {
+        let game = Game::new_game_from_fen("4k3/8/8/8/8/8/8/R3K3 w Q - 0 1");
+        let king = Piece {
+            side: Side::White,
+            kind: PieceType::King,
+        };
+        let moves = moves_set(&game, king, Square::E1);
+        assert!(moves.contains(&Square::C1));
+    }
+
+    #[test]
+    fn white_king_cannot_castle_queenside_when_b1_occupied() {
+        let game = Game::new_game_from_fen("4k3/8/8/8/8/8/8/RN2K3 w Q - 0 1");
+        let king = Piece {
+            side: Side::White,
+            kind: PieceType::King,
+        };
+        let moves = moves_set(&game, king, Square::E1);
+        assert!(!moves.contains(&Square::C1));
+    }
+
+    #[test]
+    fn white_king_cannot_castle_queenside_when_d1_attacked() {
+        let game = Game::new_game_from_fen("3rk3/8/8/8/8/8/8/R3K3 w Q - 0 1");
+        let king = Piece {
+            side: Side::White,
+            kind: PieceType::King,
+        };
+        let moves = moves_set(&game, king, Square::E1);
+        assert!(!moves.contains(&Square::C1));
+    }
+
+    #[test]
+    fn black_king_can_castle_both_sides() {
+        let game = Game::new_game_from_fen("r3k2r/8/8/8/8/8/8/4K3 b kq - 0 1");
+        let king = Piece {
+            side: Side::Black,
+            kind: PieceType::King,
+        };
+        let moves = moves_set(&game, king, Square::E8);
+        assert!(moves.contains(&Square::G8));
+        assert!(moves.contains(&Square::C8));
+    }
+
+    #[test]
+    fn black_king_cannot_castle_kingside_when_f8_attacked_by_white_bishop() {
+        let game = Game::new_game_from_fen("4k2r/8/8/8/8/B7/8/4K3 b k - 0 1");
+        let king = Piece {
+            side: Side::Black,
+            kind: PieceType::King,
+        };
+        let moves = moves_set(&game, king, Square::E8);
+        assert!(!moves.contains(&Square::G8));
+    }
+
+    #[test]
+    fn white_queen_blocked_on_all_rays() {
+        let game = Game::new_game_from_fen("8/8/8/2PPP3/2PQP3/2PPP3/8/8 b - - 0 1");
+        let squares = to_hash_set(game.get_squares_under_attacks());
+        let expected = to_hash_set([
+            Square::C3,
+            Square::D3,
+            Square::E3,
+            Square::C4,
+            Square::E4,
+            Square::C5,
+            Square::D5,
+            Square::E5,
+            Square::B4,
+            Square::D4,
+            Square::F4,
+            Square::B5,
+            Square::F5,
+            Square::B6,
+            Square::C6,
+            Square::D6,
+            Square::E6,
+            Square::F6,
+        ]);
 
         assert_eq!(squares, expected);
     }
