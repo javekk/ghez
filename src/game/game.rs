@@ -208,15 +208,37 @@ impl Game {
             else {
                 continue;
             };
-            match self.piece_at(target_square) {
-                Some(knight_attacker_piece_candidate)
-                    if knight_attacker_piece_candidate.kind == PieceType::Knight
-                        && knight_attacker_piece_candidate.side == attacker =>
+            if let Some(knight_attacker_piece_candidate) = self.piece_at(target_square) {
+                if knight_attacker_piece_candidate.kind == PieceType::Knight
+                    && knight_attacker_piece_candidate.side == attacker
                 {
                     return true;
                 }
-                _ => {
-                    continue;
+            }
+        }
+
+        // By King
+        let king_deltas: [(i8, i8); 8] = [
+            (1, 1),
+            (1, 0),
+            (1, -1),
+            (0, -1),
+            (-1, -1),
+            (-1, 0),
+            (-1, 1),
+            (0, 1),
+        ];
+        for (delta_file, delta_rank) in king_deltas {
+            let Some(target_square) =
+                Square::from_file_rank(square.file() + delta_file, square.rank() + delta_rank)
+            else {
+                continue;
+            };
+            if let Some(king_attacker_piece_candidate) = self.piece_at(target_square) {
+                if king_attacker_piece_candidate.kind == PieceType::King
+                    && king_attacker_piece_candidate.side == attacker
+                {
+                    return true;
                 }
             }
         }
@@ -905,6 +927,93 @@ mod tests {
             Square::C6,
             Square::C4,
         ]);
+
+        assert_eq!(squares, expected);
+    }
+
+    #[test]
+    fn squares_are_under_attack_by_white_knights() {
+        let game = Game::new_game_from_fen("8/8/8/4N3/8/4N3/8/8 b - - 0 1");
+        let squares = to_hash_set(game.get_squares_under_attacks());
+        let expected = to_hash_set([
+            Square::D3,
+            Square::F3,
+            Square::G4,
+            Square::G6,
+            Square::F7,
+            Square::D7,
+            Square::C6,
+            Square::C4,
+            Square::D5,
+            Square::F5,
+            Square::C2,
+            Square::G2,
+            Square::D1,
+            Square::F1,
+        ]);
+
+        assert_eq!(squares, expected);
+    }
+
+    #[test]
+    fn no_squares_are_under_attack_by_white_knights() {
+        let game = Game::new_game_from_fen("8/8/1N6/8/8/6N1/8/8 w - - 0 1");
+        let squares = to_hash_set(game.get_squares_under_attacks());
+        let expected = to_hash_set([]);
+
+        assert_eq!(squares, expected);
+    }
+
+    #[test]
+    fn squares_are_under_attack_by_black_knight() {
+        let game = Game::new_game_from_fen("8/8/8/8/8/8/8/7n w - - 0 1");
+        let squares = to_hash_set(game.get_squares_under_attacks());
+        let expected = to_hash_set([Square::F2, Square::G3]);
+
+        assert_eq!(squares, expected);
+    }
+
+    #[test]
+    fn no_squares_are_under_attack_by_black_knight() {
+        let game = Game::new_game_from_fen("8/8/8/8/8/8/8/7n b - - 0 1");
+        let squares = to_hash_set(game.get_squares_under_attacks());
+        let expected = to_hash_set([]);
+
+        assert_eq!(squares, expected);
+    }
+
+    #[test]
+    fn squares_are_under_attack_by_white_king() {
+        let game = Game::new_game_from_fen("8/8/8/4K3/8/8/8/8 b - - 0 1");
+        let squares = to_hash_set(game.get_squares_under_attacks());
+        let expected = to_hash_set([
+            Square::D4,
+            Square::E4,
+            Square::F4,
+            Square::F5,
+            Square::F6,
+            Square::E6,
+            Square::D6,
+            Square::D5,
+        ]);
+
+        assert_eq!(squares, expected);
+    }
+
+    #[test]
+    fn no_squares_are_under_attack_by_white_king() {
+        let game = Game::new_game_from_fen("8/8/8/4K3/8/8/8/8 w - - 0 1");
+        let squares = to_hash_set(game.get_squares_under_attacks());
+        let expected = to_hash_set([]);
+
+        assert_eq!(squares, expected);
+    }
+
+    #[test]
+    fn squares_are_under_attack_by_black_king() {
+        let game = Game::new_game_from_fen("k7/8/8/4K3/8/8/8/8 w - - 0 1");
+        let squares = to_hash_set(game.get_squares_under_attacks());
+        let expected = to_hash_set([Square::A7, Square::B7, Square::B8]);
 
         assert_eq!(squares, expected);
     }
