@@ -37,8 +37,6 @@ impl Game {
         match input_status {
             InputStatus::Chilling => { /* just chilling */ }
             InputStatus::Dragging(drag) => {
-                // Draw dots for legal moves
-                println!("Moves: {:?}", self.get_legal_moves(drag.piece, drag.from));
                 println!("Side -> {}", self.is_square_under_attack(drag.from));
             }
             InputStatus::Releasing(drag, square) => {
@@ -305,6 +303,10 @@ impl Game {
     }
 
     pub fn get_legal_moves(&self, piece: Piece, square: Square) -> Vec<Square> {
+        if self.game_state.side != piece.side {
+            return Vec::new();
+        }
+
         self.get_pseudo_legal_moves(piece, square)
             .iter()
             .filter(|&&to| {

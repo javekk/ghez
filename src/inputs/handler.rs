@@ -8,16 +8,16 @@ use crate::{
         domain::{Piece, Square},
         game::Game,
     },
-    inputs::handler::InputStatus::Chilling,
     render::theme,
 };
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 
 pub struct Drag {
     pub from: Square,
     pub piece: Piece,
     pub mouse_pos: (f32, f32), // Current cursor px
+    pub legal_moves: Vec<Square>,
 }
 
 pub enum InputStatus {
@@ -54,6 +54,7 @@ impl InputHandler {
                 from: square,
                 piece,
                 mouse_pos: pos,
+                legal_moves: game.get_legal_moves(piece, square),
             };
             self.drag = Some(drag.clone());
             return InputStatus::Dragging(drag.clone());
@@ -82,6 +83,7 @@ impl InputHandler {
                     from: drag.from,
                     piece: drag.piece,
                     mouse_pos: mouse_position(),
+                    legal_moves: drag.legal_moves.clone(),
                 };
                 return InputStatus::Dragging(new_drag);
             }

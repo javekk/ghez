@@ -197,6 +197,16 @@ impl Renderer {
         );
     }
 
+    fn draw_legal_moves_dots(&self, squares: &Vec<Square>) {
+        let radius = theme::SQUARE_SIZE as f32 * 0.15;
+        for square in squares {
+            let (x, y) = Self::square_to_pixel(*square as usize);
+            let cx = x + theme::SQUARE_SIZE as f32 / 2.0;
+            let cy = y + theme::SQUARE_SIZE as f32 / 2.0;
+            draw_circle(cx, cy, radius, theme::LEGAL_DOT);
+        }
+    }
+
     pub async fn run(&self, game_state: &GameState, input_status: &InputStatus) {
         clear_background(theme::BORDER_COLOR);
 
@@ -204,6 +214,9 @@ impl Renderer {
         self.draw_borders();
         self.draw_pieces(game_state, input_status);
 
+        if let InputStatus::Dragging(drag) = input_status {
+            self.draw_legal_moves_dots(&drag.legal_moves);
+        }
         next_frame().await
     }
 }
