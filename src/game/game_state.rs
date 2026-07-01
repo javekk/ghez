@@ -12,6 +12,12 @@ pub struct CastleRights {
     pub black_queenside: bool,
 }
 
+impl CastleRights {
+    pub fn is_castle_still_available(&self) -> bool {
+        self.white_kingside || self.white_queenside || self.black_kingside || self.black_queenside
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct GameState {
     pub board: Board,

@@ -212,6 +212,27 @@ pub struct Move {
     pub to: Square,
 }
 
+impl Move {
+    pub fn is_pawn_double_push(&self) -> bool {
+        if self.piece.kind == PieceType::Pawn {
+            (self.from.file() - self.to.file()).abs() == 2
+        } else {
+            false
+        }
+    }
+
+    pub fn is_castle(&self) -> bool {
+        if self.piece.kind != PieceType::King {
+            return false;
+        }
+
+        (self.from == Square::E1 && self.to == Square::G1)
+            || (self.from == Square::E1 && self.to == Square::C1)
+            || (self.from == Square::E8 && self.to == Square::G8)
+            || (self.from == Square::E8 && self.to == Square::C8)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

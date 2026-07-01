@@ -37,12 +37,19 @@ impl Game {
         match input_status {
             InputStatus::Chilling => { /* just chilling */ }
             InputStatus::Dragging(drag) => {
-                println!("Side -> {}", self.is_square_under_attack(drag.from));
+                println!(
+                    "Dragging {:?} from {:?}, now on: {:?}",
+                    drag.piece, drag.from, drag.mouse_pos
+                )
             }
             InputStatus::Releasing(drag, square) => {
                 if let Some(square) = *square {
                     if drag.from != square {
-                        self.game_state.move_piece(drag.from, square); // TODO use make_move
+                        self.make_move(Move {
+                            piece: drag.piece,
+                            from: drag.from,
+                            to: square,
+                        });
                     }
                 }
             }
@@ -124,19 +131,110 @@ impl Game {
     // region: moves
 
     fn make_move(&mut self, mv: Move) -> bool {
-        if self.game_state.move_piece(mv.from, mv.to) {
-            // Check if legal moves
-
-            // Check enpassant
-
-            // Check castle
-            true
-        } else {
-            false
+        if !self.get_legal_moves(mv.piece, mv.from).contains(&mv.to) {
+            return false;
         }
+
+        let capture_piece = self.game_state.get_piece(mv.to);
+
+        self.game_state.move_piece(mv.from, mv.to);
+
+        // Check double push
+        if mv.is_pawn_double_push() {
+            let direction = self.game_state.side.direction();
+            self.game_state.en_passant =
+                Square::from_file_rank(mv.from.file(), mv.from.rank() + direction)
+        } else {
+            self.game_state.en_passant = None;
+        }
+
+        // check castling
+        if self.game_state.available_castle.is_castle_still_available() {
+            if mv.piece.kind == PieceType::King {
+                match mv.piece.side {
+                    Side::White => {
+                        self.game_state.available_castle.white_kingside = false;
+                        self.game_state.available_castle.white_queenside = false;
+                    }
+                    Side::Black => {
+                        self.game_state.available_castle.black_kingside = false;
+                        self.game_state.available_castle.black_queenside = false;
+                    }
+                }
+            }
+
+            if mv.piece.kind == PieceType::Rook {
+                match (mv.piece.side, mv.from) {
+                    (Side::White, Square::A1) => {
+                        self.game_state.available_castle.white_queenside = false
+                    }
+                    (Side::White, Square::H1) => {
+                        self.game_state.available_castle.white_kingside = false
+                    }
+                    (Side::Black, Square::A8) => {
+                        self.game_state.available_castle.black_queenside = false
+                    }
+                    (Side::Black, Square::H8) => {
+                        self.game_state.available_castle.black_kingside = false
+                    }
+                    _ => {}
+                }
+            }
+
+            if let Some(capture_piece) = capture_piece {
+                if capture_piece.kind == PieceType::Rook {
+                    match (capture_piece.side, mv.to) {
+                        (Side::White, Square::A1) => {
+                            self.game_state.available_castle.white_queenside = false
+                        }
+                        (Side::White, Square::H1) => {
+                            self.game_state.available_castle.white_kingside = false
+                        }
+                        (Side::Black, Square::A8) => {
+                            self.game_state.available_castle.black_queenside = false
+                        }
+                        (Side::Black, Square::H8) => {
+                            self.game_state.available_castle.black_kingside = false
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        // Todo move rook also on castle
+        if mv.is_castle() {
+            match (self.game_state.side, mv.to) {
+                (Side::White, Square::G1) => {
+                    debug_assert!(self.game_state.move_piece(Square::H1, Square::F1));
+                }
+                (Side::White, Square::C1) => {
+                    debug_assert!(self.game_state.move_piece(Square::A1, Square::D1));
+                }
+                (Side::Black, Square::G8) => {
+                    debug_assert!(self.game_state.move_piece(Square::H8, Square::F8));
+                }
+                (Side::Black, Square::C8) => {
+                    debug_assert!(self.game_state.move_piece(Square::A8, Square::D8));
+                }
+                _ => {}
+            }
+        }
+
+        self.game_state.side = if self.game_state.side == Side::Black {
+            Side::White
+        } else {
+            Side::Black
+        };
+
+        true
     }
 
     fn is_move_legal(&self, mv: Move) -> bool {
+        if mv.piece.side != self.game_state.side {
+            return false;
+        }
+
         let mut game_state_snapshot = self.game_state.clone();
 
         if game_state_snapshot.move_piece(mv.from, mv.to) {
