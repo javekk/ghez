@@ -1,24 +1,14 @@
-use crate::{
-    game::{
-        domain::{Board, Move, Piece, PieceType, Side, Square},
-        game_state::{CastleRights, GameState},
-    },
-    inputs::handler::InputStatus,
-};
+use crate::game::domain::{Move, Piece, PieceType, Side, Square};
+use crate::game::game_state::{CastleRights, GameState};
+use crate::game::{fen, movegen};
+use crate::inputs::handler::InputStatus;
 
 pub struct Game {
     pub game_state: GameState,
 }
 
 impl Game {
-    // region: game
     pub fn new() -> Self {
-        Self {
-            game_state: GameState::new(),
-        }
-    }
-
-    pub fn new_game() -> Self {
         Self {
             game_state: GameState::new(),
         }
@@ -26,33 +16,7 @@ impl Game {
 
     pub fn new_game_from_fen(fen: &str) -> Self {
         Self {
-            game_state: Self::from_fen(fen),
-        }
-    }
-
-    // endregion
-
-    // region: Inputs
-    pub fn parse_input(&mut self, input_status: &InputStatus) {
-        match input_status {
-            InputStatus::Chilling => { /* just chilling */ }
-            InputStatus::Dragging(drag) => {
-                println!(
-                    "Dragging {:?} from {:?}, now on: {:?}",
-                    drag.piece, drag.from, drag.mouse_pos
-                )
-            }
-            InputStatus::Releasing(drag, square) => {
-                if let Some(square) = *square {
-                    if drag.from != square {
-                        self.make_move(Move {
-                            piece: drag.piece,
-                            from: drag.from,
-                            to: square,
-                        });
-                    }
-                }
-            }
+            game_state: fen::parse(fen),
         }
     }
 
@@ -60,174 +24,122 @@ impl Game {
         self.game_state.get_piece(square)
     }
 
-    fn from_fen(fen: &str) -> GameState {
-        let mut board: Board = [None; 64];
-
-        let fen_parts: Vec<&str> = fen.split(' ').collect();
-        let fen_board = fen_parts[0];
-
-        let mut rank_index = 7;
-        let mut file_index = 0;
-        for c in fen_board.chars() {
-            if c == '/' {
-                file_index = 0;
-                rank_index -= 1;
-            } else if c.is_digit(10) {
-                file_index += c.to_digit(10).unwrap() as usize;
-            } else {
-                let side = if c.is_uppercase() {
-                    Side::White
-                } else {
-                    Side::Black
-                };
-                let piece_type = match c.to_ascii_lowercase() {
-                    'k' => PieceType::King,
-                    'q' => PieceType::Queen,
-                    'r' => PieceType::Rook,
-                    'b' => PieceType::Bishop,
-                    'n' => PieceType::Knight,
-                    'p' => PieceType::Pawn,
-                    _ => panic!("Invalid piece type in FEN"),
-                };
-                let piece = Piece {
-                    side,
-                    kind: piece_type,
-                };
-                board[file_index + (rank_index * 8)] = Some(piece);
-                file_index += 1;
+    pub fn parse_input(&mut self, input_status: &InputStatus) {
+        match input_status {
+            InputStatus::Chilling => {}
+            InputStatus::Dragging(drag) => {
+                println!(
+                    "Dragging {:?} from {:?}, now on: {:?}",
+                    drag.piece, drag.from, drag.mouse_pos
+                );
             }
+            InputStatus::Releasing(drag, Some(square)) if drag.from != *square => {
+                self.make_move(Move {
+                    piece: drag.piece,
+                    from: drag.from,
+                    to: *square,
+                });
+            }
+            InputStatus::Releasing(..) => {}
         }
-
-        let mut game_state = GameState::new();
-        game_state.board = board;
-
-        game_state.side = match fen_parts[1].to_ascii_lowercase().as_str() {
-            "b" => Side::Black,
-            "w" => Side::White,
-            _ => panic!("Invalid side type in FEN"),
-        };
-
-        let castle_field = fen_parts[2];
-        game_state.available_castle = CastleRights {
-            white_kingside: castle_field.contains('K'),
-            white_queenside: castle_field.contains('Q'),
-            black_kingside: castle_field.contains('k'),
-            black_queenside: castle_field.contains('q'),
-        };
-
-        let en_passant = fen_parts[3];
-        game_state.en_passant = match en_passant {
-            "-" => None,
-            s => Some(s.parse().expect("invalid en passant square in FEN")),
-        };
-
-        // TODO parse all the other parts and validate it overall
-
-        game_state
     }
 
-    // endregion
+    pub fn get_legal_moves(&self, piece: Piece, from: Square) -> Vec<Square> {
+        if self.game_state.side != piece.side {
+            return Vec::new();
+        }
 
-    // region: moves
+        self.get_pseudo_legal_moves(piece, from)
+            .into_iter()
+            .filter(|&to| self.is_move_legal(Move { piece, from, to }))
+            .collect()
+    }
 
     fn make_move(&mut self, mv: Move) -> bool {
         if !self.get_legal_moves(mv.piece, mv.from).contains(&mv.to) {
             return false;
         }
 
-        let capture_piece = self.game_state.get_piece(mv.to);
+        let captured_piece = self.game_state.get_piece(mv.to);
+        let is_en_passant = self.is_en_passant_capture(mv, captured_piece);
 
         self.game_state.move_piece(mv.from, mv.to);
 
-        // Check double push
-        if mv.is_pawn_double_push() {
-            let direction = self.game_state.side.direction();
-            self.game_state.en_passant =
-                Square::from_file_rank(mv.from.file(), mv.from.rank() + direction)
+        if is_en_passant {
+            self.remove_en_passant_captured_pawn(mv);
+        }
+        self.update_en_passant_target(mv);
+        self.update_castle_rights(mv, captured_piece);
+        self.relocate_rook_on_castle(mv);
+
+        self.game_state.side = self.game_state.side.opponent();
+        true
+    }
+
+    fn is_en_passant_capture(&self, mv: Move, captured_piece: Option<Piece>) -> bool {
+        mv.piece.kind == PieceType::Pawn
+            && self.game_state.en_passant == Some(mv.to)
+            && captured_piece.is_none()
+    }
+
+    fn remove_en_passant_captured_pawn(&mut self, mv: Move) {
+        // The captured pawn sits beside the destination: same file as `to`, same
+        // rank as `from`.
+        if let Some(captured_square) = Square::from_file_rank(mv.to.file(), mv.from.rank()) {
+            self.game_state.clear_square(captured_square);
+        }
+    }
+
+    fn update_en_passant_target(&mut self, mv: Move) {
+        self.game_state.en_passant = if mv.is_pawn_double_push() {
+            let behind = mv.from.rank() + mv.piece.side.direction();
+            Square::from_file_rank(mv.from.file(), behind)
         } else {
-            self.game_state.en_passant = None;
-        }
+            None
+        };
+    }
 
-        // check castling
-        if self.game_state.available_castle.is_castle_still_available() {
-            if mv.piece.kind == PieceType::King {
-                match mv.piece.side {
-                    Side::White => {
-                        self.game_state.available_castle.white_kingside = false;
-                        self.game_state.available_castle.white_queenside = false;
-                    }
-                    Side::Black => {
-                        self.game_state.available_castle.black_kingside = false;
-                        self.game_state.available_castle.black_queenside = false;
-                    }
+    fn update_castle_rights(&mut self, mv: Move, captured_piece: Option<Piece>) {
+        let rights = &mut self.game_state.available_castle;
+
+        if mv.piece.kind == PieceType::King {
+            match mv.piece.side {
+                Side::White => {
+                    rights.white_kingside = false;
+                    rights.white_queenside = false;
                 }
-            }
-
-            if mv.piece.kind == PieceType::Rook {
-                match (mv.piece.side, mv.from) {
-                    (Side::White, Square::A1) => {
-                        self.game_state.available_castle.white_queenside = false
-                    }
-                    (Side::White, Square::H1) => {
-                        self.game_state.available_castle.white_kingside = false
-                    }
-                    (Side::Black, Square::A8) => {
-                        self.game_state.available_castle.black_queenside = false
-                    }
-                    (Side::Black, Square::H8) => {
-                        self.game_state.available_castle.black_kingside = false
-                    }
-                    _ => {}
-                }
-            }
-
-            if let Some(capture_piece) = capture_piece {
-                if capture_piece.kind == PieceType::Rook {
-                    match (capture_piece.side, mv.to) {
-                        (Side::White, Square::A1) => {
-                            self.game_state.available_castle.white_queenside = false
-                        }
-                        (Side::White, Square::H1) => {
-                            self.game_state.available_castle.white_kingside = false
-                        }
-                        (Side::Black, Square::A8) => {
-                            self.game_state.available_castle.black_queenside = false
-                        }
-                        (Side::Black, Square::H8) => {
-                            self.game_state.available_castle.black_kingside = false
-                        }
-                        _ => {}
-                    }
+                Side::Black => {
+                    rights.black_kingside = false;
+                    rights.black_queenside = false;
                 }
             }
         }
 
-        // Todo move rook also on castle
-        if mv.is_castle() {
-            match (self.game_state.side, mv.to) {
-                (Side::White, Square::G1) => {
-                    debug_assert!(self.game_state.move_piece(Square::H1, Square::F1));
-                }
-                (Side::White, Square::C1) => {
-                    debug_assert!(self.game_state.move_piece(Square::A1, Square::D1));
-                }
-                (Side::Black, Square::G8) => {
-                    debug_assert!(self.game_state.move_piece(Square::H8, Square::F8));
-                }
-                (Side::Black, Square::C8) => {
-                    debug_assert!(self.game_state.move_piece(Square::A8, Square::D8));
-                }
-                _ => {}
-            }
+        if mv.piece.kind == PieceType::Rook {
+            revoke_right_for_rook_square(rights, mv.piece.side, mv.from);
         }
 
-        self.game_state.side = if self.game_state.side == Side::Black {
-            Side::White
-        } else {
-            Side::Black
+        if let Some(captured) = captured_piece {
+            if captured.kind == PieceType::Rook {
+                revoke_right_for_rook_square(rights, captured.side, mv.to);
+            }
+        }
+    }
+
+    fn relocate_rook_on_castle(&mut self, mv: Move) {
+        if !mv.is_castle() {
+            return;
+        }
+
+        let (rook_from, rook_to) = match (mv.piece.side, mv.to) {
+            (Side::White, Square::G1) => (Square::H1, Square::F1),
+            (Side::White, Square::C1) => (Square::A1, Square::D1),
+            (Side::Black, Square::G8) => (Square::H8, Square::F8),
+            (Side::Black, Square::C8) => (Square::A8, Square::D8),
+            _ => return,
         };
 
-        true
+        debug_assert!(self.game_state.move_piece(rook_from, rook_to));
     }
 
     fn is_move_legal(&self, mv: Move) -> bool {
@@ -235,430 +147,47 @@ impl Game {
             return false;
         }
 
-        let mut game_state_snapshot = self.game_state.clone();
-
-        if game_state_snapshot.move_piece(mv.from, mv.to) {
-            for i in 0..64u8 {
-                let square: Square = unsafe { std::mem::transmute(i) };
-                if game_state_snapshot.get_piece(square).is_some_and(|p| {
-                    p.kind == PieceType::King && p.side == game_state_snapshot.side
-                }) && self._is_square_under_attack(game_state_snapshot, square)
-                {
-                    return false;
-                }
-            }
-        } else {
+        let mut state = self.game_state;
+        if !state.move_piece(mv.from, mv.to) {
             return false;
         }
-        return true;
+
+        !king_is_in_check(&state)
     }
 
     fn get_squares_under_attacks(&self) -> Vec<Square> {
-        let mut attacked_squares = Vec::new();
-
-        for i in 0..64u8 {
-            let square: Square = unsafe { std::mem::transmute(i) };
-            if self.is_square_under_attack(square) {
-                attacked_squares.push(square);
-            }
-        }
-        attacked_squares
-    }
-
-    fn is_square_under_attack(&self, square: Square) -> bool {
-        self._is_square_under_attack(self.game_state, square)
-    }
-
-    fn _is_square_under_attack(&self, state: GameState, square: Square) -> bool {
-        let file = square.file();
-        let rank = square.rank();
-        let attacker = if state.side == Side::White {
-            Side::Black
-        } else {
-            Side::White
-        };
-        let direction = state.side.direction();
-
-        // By pawns
-        for pawn_attacking_deltas in [-1, 1] {
-            let Some(pawn_attacking_square_candidate) =
-                Square::from_file_rank(file + pawn_attacking_deltas, rank + direction)
-            else {
-                continue;
-            };
-            if let Some(pawn_attacker_piece_candidate) =
-                state.piece_at(pawn_attacking_square_candidate)
-            {
-                if pawn_attacker_piece_candidate.kind == PieceType::Pawn
-                    && pawn_attacker_piece_candidate.side == attacker
-                {
-                    return true;
-                }
-            }
-        }
-
-        // By Knight
-        let knight_deltas: [(i8, i8); 8] = [
-            (1, 2),
-            (2, 1),
-            (2, -1),
-            (1, -2),
-            (-1, -2),
-            (-2, -1),
-            (-2, 1),
-            (-1, 2),
-        ];
-
-        for (delta_file, delta_rank) in knight_deltas {
-            let Some(target_square) =
-                Square::from_file_rank(square.file() + delta_file, square.rank() + delta_rank)
-            else {
-                continue;
-            };
-            if let Some(knight_attacker_piece_candidate) = state.piece_at(target_square) {
-                if knight_attacker_piece_candidate.kind == PieceType::Knight
-                    && knight_attacker_piece_candidate.side == attacker
-                {
-                    return true;
-                }
-            }
-        }
-
-        // By King
-        let king_deltas: [(i8, i8); 8] = [
-            (1, 1),
-            (1, 0),
-            (1, -1),
-            (0, -1),
-            (-1, -1),
-            (-1, 0),
-            (-1, 1),
-            (0, 1),
-        ];
-        for (delta_file, delta_rank) in king_deltas {
-            let Some(target_square) =
-                Square::from_file_rank(square.file() + delta_file, square.rank() + delta_rank)
-            else {
-                continue;
-            };
-            if let Some(king_attacker_piece_candidate) = state.piece_at(target_square) {
-                if king_attacker_piece_candidate.kind == PieceType::King
-                    && king_attacker_piece_candidate.side == attacker
-                {
-                    return true;
-                }
-            }
-        }
-
-        // By bishop (or Queen)
-        let bishop_directions: [(i8, i8); 4] = [(1, 1), (1, -1), (-1, -1), (-1, 1)];
-
-        for (direction_file, direction_rank) in bishop_directions {
-            for square_inc in 1..8 {
-                let Some(target_square) = Square::from_file_rank(
-                    square.file() + (direction_file * square_inc),
-                    square.rank() + (direction_rank * square_inc),
-                ) else {
-                    break;
-                };
-
-                if let Some(piece) = state.piece_at(target_square) {
-                    if (piece.kind == PieceType::Bishop || piece.kind == PieceType::Queen)
-                        && piece.side == attacker
-                    {
-                        return true;
-                    }
-
-                    break;
-                }
-            }
-        }
-
-        // By Rook (or Queen)
-        let rook_directions: [(i8, i8); 4] = [(0, 1), (0, -1), (1, 0), (-1, 0)];
-        for (direction_file, direction_rank) in rook_directions {
-            for square_inc in 1..8 {
-                let Some(target_square) = Square::from_file_rank(
-                    square.file() + (direction_file * square_inc),
-                    square.rank() + (direction_rank * square_inc),
-                ) else {
-                    break;
-                };
-
-                if let Some(piece) = state.piece_at(target_square) {
-                    if (piece.kind == PieceType::Rook || piece.kind == PieceType::Queen)
-                        && piece.side == attacker
-                    {
-                        return true;
-                    }
-
-                    break;
-                }
-            }
-        }
-
-        false
-    }
-
-    pub fn get_legal_moves(&self, piece: Piece, square: Square) -> Vec<Square> {
-        if self.game_state.side != piece.side {
-            return Vec::new();
-        }
-
-        self.get_pseudo_legal_moves(piece, square)
-            .iter()
-            .filter(|&&to| {
-                self.is_move_legal(Move {
-                    piece,
-                    from: square,
-                    to: to,
-                })
-            })
-            .copied()
+        Square::ALL
+            .into_iter()
+            .filter(|&square| self.is_square_under_attack(square))
             .collect()
     }
 
-    fn get_pseudo_legal_moves(&self, piece: Piece, square: Square) -> Vec<Square> {
-        match piece.kind {
-            PieceType::Pawn => self.get_pawn_pseudo_legal_moves(square),
-            PieceType::Knight => self.get_knight_pseudo_legal_moves(square),
-            PieceType::Bishop => self.get_bishop_pseudo_legal_moves(square),
-            PieceType::Rook => self.get_rook_pseudo_legal_moves(square),
-            PieceType::Queen => self.get_queen_pseudo_legal_moves(square),
-            PieceType::King => self.get_king_pseudo_legal_moves(square),
-        }
+    fn is_square_under_attack(&self, square: Square) -> bool {
+        movegen::is_square_attacked(&self.game_state, square)
     }
 
-    fn get_leaper_piece_pseudo_legal_moves(&self, kind: PieceType, square: Square) -> Vec<Square> {
-        const KNIGHT_DELTAS: [(i8, i8); 8] = [
-            (1, 2),
-            (2, 1),
-            (2, -1),
-            (1, -2),
-            (-1, -2),
-            (-2, -1),
-            (-2, 1),
-            (-1, 2),
-        ];
-        const KING_DELTAS: [(i8, i8); 8] = [
-            (1, 1),
-            (1, 0),
-            (1, -1),
-            (0, -1),
-            (-1, -1),
-            (-1, 0),
-            (-1, 1),
-            (0, 1),
-        ];
-
-        let directions: &[(i8, i8)] = match kind {
-            PieceType::Knight => &KNIGHT_DELTAS,
-            PieceType::King => &KING_DELTAS,
-            _ => panic!("Not a leaper piece"),
-        };
-
-        let side = self.game_state.side;
-        let mut moves = Vec::new();
-        for (delta_file, delta_rank) in directions {
-            let Some(target_square) =
-                Square::from_file_rank(square.file() + delta_file, square.rank() + delta_rank)
-            else {
-                continue;
-            };
-            match self.game_state.piece_at(target_square) {
-                Some(target_piece) if target_piece.side == side => {}
-                _ => moves.push(target_square),
-            }
-        }
-        moves
+    fn get_pseudo_legal_moves(&self, piece: Piece, from: Square) -> Vec<Square> {
+        movegen::pseudo_legal_moves(&self.game_state, piece, from)
     }
+}
 
-    fn get_knight_pseudo_legal_moves(&self, square: Square) -> Vec<Square> {
-        self.get_leaper_piece_pseudo_legal_moves(PieceType::Knight, square)
+fn king_is_in_check(state: &GameState) -> bool {
+    Square::ALL.into_iter().any(|square| {
+        state
+            .get_piece(square)
+            .is_some_and(|piece| piece.kind == PieceType::King && piece.side == state.side)
+            && movegen::is_square_attacked(state, square)
+    })
+}
+
+fn revoke_right_for_rook_square(rights: &mut CastleRights, side: Side, square: Square) {
+    match (side, square) {
+        (Side::White, Square::A1) => rights.white_queenside = false,
+        (Side::White, Square::H1) => rights.white_kingside = false,
+        (Side::Black, Square::A8) => rights.black_queenside = false,
+        (Side::Black, Square::H8) => rights.black_kingside = false,
+        _ => {}
     }
-
-    fn get_king_pseudo_legal_moves(&self, square: Square) -> Vec<Square> {
-        let side = self.game_state.side;
-        let mut leaper_moves = self.get_leaper_piece_pseudo_legal_moves(PieceType::King, square);
-
-        // Castle
-        let rights = self.game_state.available_castle;
-        let (kingside, queenside) = match side {
-            Side::White => (rights.white_kingside, rights.white_queenside),
-            Side::Black => (rights.black_kingside, rights.black_queenside),
-        };
-
-        if !self.is_square_under_attack(square) {
-            if kingside {
-                match side {
-                    Side::White => {
-                        if self.game_state.piece_at(Square::F1).is_none()
-                            && self.game_state.piece_at(Square::G1).is_none()
-                            && !self.is_square_under_attack(Square::F1)
-                            && !self.is_square_under_attack(Square::G1)
-                        {
-                            leaper_moves.push(Square::G1)
-                        }
-                    }
-                    Side::Black => {
-                        if self.game_state.piece_at(Square::F8).is_none()
-                            && self.game_state.piece_at(Square::G8).is_none()
-                            && !self.is_square_under_attack(Square::F8)
-                            && !self.is_square_under_attack(Square::G8)
-                        {
-                            leaper_moves.push(Square::G8)
-                        }
-                    }
-                };
-            }
-
-            if queenside {
-                match side {
-                    Side::White => {
-                        if self.game_state.piece_at(Square::B1).is_none()
-                            && self.game_state.piece_at(Square::C1).is_none()
-                            && self.game_state.piece_at(Square::D1).is_none()
-                            && !self.is_square_under_attack(Square::D1)
-                            && !self.is_square_under_attack(Square::C1)
-                        {
-                            leaper_moves.push(Square::C1)
-                        }
-                    }
-                    Side::Black => {
-                        if self.game_state.piece_at(Square::B8).is_none()
-                            && self.game_state.piece_at(Square::C8).is_none()
-                            && self.game_state.piece_at(Square::D8).is_none()
-                            && !self.is_square_under_attack(Square::D8)
-                            && !self.is_square_under_attack(Square::C8)
-                        {
-                            leaper_moves.push(Square::C8)
-                        }
-                    }
-                };
-            }
-        }
-
-        leaper_moves // TODO
-    }
-
-    fn get_pawn_pseudo_legal_moves(&self, square: Square) -> Vec<Square> {
-        let side = self.game_state.side;
-        let file = square.file();
-        let rank = square.rank();
-        let direction = side.direction();
-
-        let mut moves = Vec::new();
-
-        // Quiet moves: single step, and double step from start rank.
-        if let Some(one_step_square) = Square::from_file_rank(file, rank + direction) {
-            if self.game_state.piece_at(one_step_square).is_none() {
-                moves.push(one_step_square);
-                if rank == side.pawn_start_rank() {
-                    if let Some(two_step_square) =
-                        Square::from_file_rank(file, rank + 2 * direction)
-                    {
-                        if self.game_state.piece_at(two_step_square).is_none() {
-                            moves.push(two_step_square);
-                        }
-                    }
-                }
-            }
-        }
-
-        // Diagonal captures (skips off-board files, e.g. a/h-file edges).
-        for capture_file_offset in [-1, 1] {
-            let Some(capture_square) =
-                Square::from_file_rank(file + capture_file_offset, rank + direction)
-            else {
-                continue;
-            };
-            if let Some(captured_piece) = self.game_state.piece_at(capture_square) {
-                if captured_piece.side != side {
-                    moves.push(capture_square);
-                }
-            }
-        }
-
-        // En passant
-
-        if let Some(en_passant_square) = self.game_state.en_passant.clone() {
-            if Square::from_file_rank(file + 1, rank + direction)
-                .is_some_and(|sq| sq == en_passant_square)
-            {
-                moves.push(en_passant_square);
-            }
-            if Square::from_file_rank(file - 1, rank + direction)
-                .is_some_and(|sq| sq == en_passant_square)
-            {
-                moves.push(en_passant_square);
-            }
-        }
-
-        moves
-    }
-
-    fn get_sliding_piece_legal_moves(&self, kind: PieceType, square: Square) -> Vec<Square> {
-        const BISHOP_DIRECTIONS: [(i8, i8); 4] = [(1, 1), (1, -1), (-1, -1), (-1, 1)];
-        const ROOK_DIRECTIONS: [(i8, i8); 4] = [(0, 1), (0, -1), (1, 0), (-1, 0)];
-        const QUEEN_DIRECTIONS: [(i8, i8); 8] = [
-            (1, 1),
-            (1, -1),
-            (-1, -1),
-            (-1, 1),
-            (0, 1),
-            (0, -1),
-            (1, 0),
-            (-1, 0),
-        ];
-
-        let directions: &[(i8, i8)] = match kind {
-            PieceType::Bishop => &BISHOP_DIRECTIONS,
-            PieceType::Rook => &ROOK_DIRECTIONS,
-            PieceType::Queen => &QUEEN_DIRECTIONS,
-            _ => panic!("Not a sliding piece"),
-        };
-
-        let side = self.game_state.side;
-        let file = square.file();
-        let rank = square.rank();
-
-        let mut moves = Vec::new();
-
-        for (direction_file, direction_rank) in directions {
-            for square_inc in 1..8 {
-                let Some(target_square) = Square::from_file_rank(
-                    file + (direction_file * square_inc),
-                    rank + (direction_rank * square_inc),
-                ) else {
-                    break;
-                };
-
-                match self.game_state.piece_at(target_square) {
-                    Some(p) if p.side == side => break,
-                    Some(_) => {
-                        moves.push(target_square);
-                        break;
-                    }
-                    None => moves.push(target_square),
-                }
-            }
-        }
-        moves
-    }
-
-    fn get_bishop_pseudo_legal_moves(&self, square: Square) -> Vec<Square> {
-        self.get_sliding_piece_legal_moves(PieceType::Bishop, square)
-    }
-
-    fn get_rook_pseudo_legal_moves(&self, square: Square) -> Vec<Square> {
-        self.get_sliding_piece_legal_moves(PieceType::Rook, square)
-    }
-
-    fn get_queen_pseudo_legal_moves(&self, square: Square) -> Vec<Square> {
-        self.get_sliding_piece_legal_moves(PieceType::Queen, square)
-    }
-
-    // endregion
 }
 
 #[cfg(test)]
@@ -671,6 +200,20 @@ mod tests {
 
     fn moves_set(game: &Game, piece: Piece, sq: Square) -> HashSet<Square> {
         game.get_pseudo_legal_moves(piece, sq).into_iter().collect()
+    }
+
+    fn white(kind: PieceType) -> Piece {
+        Piece {
+            side: Side::White,
+            kind,
+        }
+    }
+
+    fn black(kind: PieceType) -> Piece {
+        Piece {
+            side: Side::Black,
+            kind,
+        }
     }
 
     #[test]
@@ -1693,5 +1236,447 @@ mod tests {
         let legal: HashSet<Square> = to_hash_set(game.get_legal_moves(king, Square::E8));
         let expected: HashSet<Square> = to_hash_set([Square::F8]);
         assert_eq!(legal, expected);
+    }
+
+    // region: fen parsing
+
+    #[test]
+    fn fen_parses_side_to_move() {
+        assert_eq!(
+            Game::new_game_from_fen("8/8/8/8/8/8/8/8 w - - 0 1")
+                .game_state
+                .side,
+            Side::White
+        );
+        assert_eq!(
+            Game::new_game_from_fen("8/8/8/8/8/8/8/8 b - - 0 1")
+                .game_state
+                .side,
+            Side::Black
+        );
+    }
+
+    #[test]
+    fn fen_parses_all_castle_rights() {
+        let rights = Game::new_game_from_fen(START_FEN)
+            .game_state
+            .available_castle;
+        assert!(rights.white_kingside);
+        assert!(rights.white_queenside);
+        assert!(rights.black_kingside);
+        assert!(rights.black_queenside);
+    }
+
+    #[test]
+    fn fen_parses_partial_castle_rights() {
+        let rights = Game::new_game_from_fen("8/8/8/8/8/8/8/8 w Kq - 0 1")
+            .game_state
+            .available_castle;
+        assert!(rights.white_kingside);
+        assert!(!rights.white_queenside);
+        assert!(!rights.black_kingside);
+        assert!(rights.black_queenside);
+    }
+
+    #[test]
+    fn fen_parses_no_castle_rights() {
+        let rights = Game::new_game_from_fen("8/8/8/8/8/8/8/8 w - - 0 1")
+            .game_state
+            .available_castle;
+        assert!(!rights.is_castle_still_available());
+    }
+
+    #[test]
+    fn fen_parses_en_passant_square() {
+        assert_eq!(
+            Game::new_game_from_fen("8/8/8/8/8/8/8/8 w - e3 0 1")
+                .game_state
+                .en_passant,
+            Some(Square::E3)
+        );
+    }
+
+    #[test]
+    fn fen_parses_no_en_passant_square() {
+        assert_eq!(
+            Game::new_game_from_fen("8/8/8/8/8/8/8/8 w - - 0 1")
+                .game_state
+                .en_passant,
+            None
+        );
+    }
+
+    #[test]
+    fn fen_empty_board_has_no_pieces() {
+        let game = Game::new_game_from_fen(EMPTY_FEN);
+        for i in 0..64 {
+            assert!(
+                game.game_state
+                    .get_piece(Square::from_index(i).unwrap())
+                    .is_none()
+            );
+        }
+    }
+
+    #[test]
+    fn fen_places_all_piece_types_on_correct_squares() {
+        let game = Game::new_game_from_fen("8/8/8/8/8/8/8/RNBQKBNR w - - 0 1");
+        let expected = [
+            (Square::A1, PieceType::Rook),
+            (Square::B1, PieceType::Knight),
+            (Square::C1, PieceType::Bishop),
+            (Square::D1, PieceType::Queen),
+            (Square::E1, PieceType::King),
+            (Square::F1, PieceType::Bishop),
+            (Square::G1, PieceType::Knight),
+            (Square::H1, PieceType::Rook),
+        ];
+        for (sq, kind) in expected {
+            assert_eq!(game.game_state.get_piece(sq), Some(white(kind)));
+        }
+    }
+
+    // endregion
+
+    // region: get_pseudo_legal_moves dispatch
+
+    #[test]
+    fn pseudo_legal_dispatch_matches_each_piece_kind() {
+        // Lone piece in the center of an empty board; assert the dispatch routes
+        // to a non-empty result per kind (specifics covered elsewhere).
+        for kind in [
+            PieceType::Knight,
+            PieceType::Bishop,
+            PieceType::Rook,
+            PieceType::Queen,
+            PieceType::King,
+        ] {
+            let game = Game::new_game_from_fen("8/8/8/8/3Q4/8/8/8 w - - 0 1");
+            let moves = game.get_pseudo_legal_moves(white(kind), Square::D4);
+            assert!(
+                !moves.is_empty(),
+                "{:?} should have pseudo-legal moves",
+                kind
+            );
+        }
+    }
+
+    // endregion
+
+    // region: get_legal_moves en passant
+
+    #[test]
+    fn get_legal_moves_includes_en_passant_capture() {
+        let game = Game::new_game_from_fen("4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 1");
+        let legal: HashSet<Square> =
+            to_hash_set(game.get_legal_moves(white(PieceType::Pawn), Square::E5));
+        assert!(legal.contains(&Square::D6));
+    }
+
+    #[test]
+    fn get_legal_moves_empty_for_wrong_side_piece() {
+        let game = Game::new_game_from_fen("4k3/4p3/8/8/8/8/8/4K3 w - - 0 1");
+        assert!(
+            game.get_legal_moves(black(PieceType::Pawn), Square::E7)
+                .is_empty()
+        );
+    }
+
+    // endregion
+
+    // region: full move sequences
+
+    #[test]
+    fn en_passant_available_immediately_after_double_push() {
+        // Black double-pushes d7-d5, then white can capture e5xd6 e.p. next move.
+        let mut game = Game::new_game_from_fen("4k3/3p4/8/4P3/8/8/8/4K3 b - - 0 1");
+        game.make_move(Move {
+            piece: black(PieceType::Pawn),
+            from: Square::D7,
+            to: Square::D5,
+        });
+        assert_eq!(game.game_state.en_passant, Some(Square::D6));
+        let legal: HashSet<Square> =
+            to_hash_set(game.get_legal_moves(white(PieceType::Pawn), Square::E5));
+        assert!(
+            legal.contains(&Square::D6),
+            "e.p. should be legal right after the push"
+        );
+    }
+
+    // endregion
+
+    // region: make_move
+
+    #[test]
+    fn make_move_moves_the_piece_and_clears_origin() {
+        let mut game = Game::new_game_from_fen("4k3/8/8/8/8/8/4P3/4K3 w - - 0 1");
+        let ok = game.make_move(Move {
+            piece: white(PieceType::Pawn),
+            from: Square::E2,
+            to: Square::E4,
+        });
+        assert!(ok);
+        assert_eq!(game.game_state.get_piece(Square::E2), None);
+        assert_eq!(
+            game.game_state.get_piece(Square::E4),
+            Some(white(PieceType::Pawn))
+        );
+    }
+
+    #[test]
+    fn make_move_toggles_side_to_move() {
+        let mut game = Game::new_game_from_fen("4k3/8/8/8/8/8/4P3/4K3 w - - 0 1");
+        assert_eq!(game.game_state.side, Side::White);
+        game.make_move(Move {
+            piece: white(PieceType::Pawn),
+            from: Square::E2,
+            to: Square::E4,
+        });
+        assert_eq!(game.game_state.side, Side::Black);
+    }
+
+    #[test]
+    fn make_move_rejects_illegal_move_and_does_not_mutate() {
+        let mut game = Game::new_game_from_fen("4k3/8/8/8/8/8/4P3/4K3 w - - 0 1");
+        let ok = game.make_move(Move {
+            piece: white(PieceType::Pawn),
+            from: Square::E2,
+            to: Square::E5, // too far
+        });
+        assert!(!ok);
+        assert_eq!(
+            game.game_state.get_piece(Square::E2),
+            Some(white(PieceType::Pawn))
+        );
+        assert_eq!(game.game_state.get_piece(Square::E5), None);
+        assert_eq!(game.game_state.side, Side::White);
+    }
+
+    #[test]
+    fn make_move_rejects_moving_opponent_piece() {
+        let mut game = Game::new_game_from_fen("4k3/4p3/8/8/8/8/8/4K3 w - - 0 1");
+        let ok = game.make_move(Move {
+            piece: black(PieceType::Pawn),
+            from: Square::E7,
+            to: Square::E5,
+        });
+        assert!(!ok);
+        assert_eq!(game.game_state.side, Side::White);
+    }
+
+    #[test]
+    fn make_move_captures_enemy_piece() {
+        let mut game = Game::new_game_from_fen("4k3/8/8/3p4/4P3/8/8/4K3 w - - 0 1");
+        let ok = game.make_move(Move {
+            piece: white(PieceType::Pawn),
+            from: Square::E4,
+            to: Square::D5,
+        });
+        assert!(ok);
+        assert_eq!(
+            game.game_state.get_piece(Square::D5),
+            Some(white(PieceType::Pawn))
+        );
+    }
+
+    #[test]
+    fn make_move_white_double_push_sets_en_passant_behind_pawn() {
+        let mut game = Game::new_game_from_fen("4k3/8/8/8/8/8/4P3/4K3 w - - 0 1");
+        game.make_move(Move {
+            piece: white(PieceType::Pawn),
+            from: Square::E2,
+            to: Square::E4,
+        });
+        assert_eq!(game.game_state.en_passant, Some(Square::E3));
+    }
+
+    #[test]
+    fn make_move_black_double_push_sets_en_passant_behind_pawn() {
+        let mut game = Game::new_game_from_fen("4k3/4p3/8/8/8/8/8/4K3 b - - 0 1");
+        game.make_move(Move {
+            piece: black(PieceType::Pawn),
+            from: Square::E7,
+            to: Square::E5,
+        });
+        assert_eq!(game.game_state.en_passant, Some(Square::E6));
+    }
+
+    #[test]
+    fn make_move_en_passant_removes_the_captured_pawn() {
+        // White pawn e5, black pawn d5 just double-pushed (en passant target d6).
+        let mut game = Game::new_game_from_fen("4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 1");
+        let ok = game.make_move(Move {
+            piece: white(PieceType::Pawn),
+            from: Square::E5,
+            to: Square::D6,
+        });
+        assert!(ok);
+        assert_eq!(
+            game.game_state.get_piece(Square::D6),
+            Some(white(PieceType::Pawn))
+        );
+        assert_eq!(
+            game.game_state.get_piece(Square::D5),
+            None,
+            "captured pawn must be removed"
+        );
+        assert_eq!(game.game_state.get_piece(Square::E5), None);
+    }
+
+    #[test]
+    fn make_move_black_en_passant_removes_the_captured_pawn() {
+        // Black pawn d4, white pawn e4 just double-pushed (en passant target e3).
+        let mut game = Game::new_game_from_fen("4k3/8/8/8/3pP3/8/8/4K3 b - e3 0 1");
+        let ok = game.make_move(Move {
+            piece: black(PieceType::Pawn),
+            from: Square::D4,
+            to: Square::E3,
+        });
+        assert!(ok);
+        assert_eq!(
+            game.game_state.get_piece(Square::E4),
+            None,
+            "captured pawn must be removed"
+        );
+    }
+
+    #[test]
+    fn make_move_single_push_clears_en_passant() {
+        let mut game = Game::new_game_from_fen("4k3/8/8/8/8/8/4P3/4K3 w KQkq e6 0 1");
+        game.make_move(Move {
+            piece: white(PieceType::Pawn),
+            from: Square::E2,
+            to: Square::E3,
+        });
+        assert_eq!(game.game_state.en_passant, None);
+    }
+
+    #[test]
+    fn make_move_king_move_revokes_both_castle_rights() {
+        let mut game = Game::new_game_from_fen("4k3/8/8/8/8/8/8/4K2R w KQ - 0 1");
+        game.make_move(Move {
+            piece: white(PieceType::King),
+            from: Square::E1,
+            to: Square::E2,
+        });
+        assert!(!game.game_state.available_castle.white_kingside);
+        assert!(!game.game_state.available_castle.white_queenside);
+    }
+
+    #[test]
+    fn make_move_rook_move_revokes_that_side_castle_right() {
+        let mut game = Game::new_game_from_fen("4k3/8/8/8/8/8/8/R3K2R w KQ - 0 1");
+        game.make_move(Move {
+            piece: white(PieceType::Rook),
+            from: Square::H1,
+            to: Square::H4,
+        });
+        assert!(!game.game_state.available_castle.white_kingside);
+        assert!(game.game_state.available_castle.white_queenside);
+    }
+
+    #[test]
+    fn make_move_kingside_castle_moves_rook() {
+        let mut game = Game::new_game_from_fen("4k3/8/8/8/8/8/8/4K2R w K - 0 1");
+        let ok = game.make_move(Move {
+            piece: white(PieceType::King),
+            from: Square::E1,
+            to: Square::G1,
+        });
+        assert!(ok);
+        assert_eq!(
+            game.game_state.get_piece(Square::G1),
+            Some(white(PieceType::King))
+        );
+        assert_eq!(
+            game.game_state.get_piece(Square::F1),
+            Some(white(PieceType::Rook))
+        );
+        assert_eq!(game.game_state.get_piece(Square::H1), None);
+    }
+
+    #[test]
+    fn make_move_queenside_castle_moves_rook() {
+        let mut game = Game::new_game_from_fen("4k3/8/8/8/8/8/8/R3K3 w Q - 0 1");
+        let ok = game.make_move(Move {
+            piece: white(PieceType::King),
+            from: Square::E1,
+            to: Square::C1,
+        });
+        assert!(ok);
+        assert_eq!(
+            game.game_state.get_piece(Square::C1),
+            Some(white(PieceType::King))
+        );
+        assert_eq!(
+            game.game_state.get_piece(Square::D1),
+            Some(white(PieceType::Rook))
+        );
+        assert_eq!(game.game_state.get_piece(Square::A1), None);
+    }
+
+    #[test]
+    fn make_move_black_kingside_castle_moves_rook() {
+        let mut game = Game::new_game_from_fen("4k2r/8/8/8/8/8/8/4K3 b k - 0 1");
+        let ok = game.make_move(Move {
+            piece: black(PieceType::King),
+            from: Square::E8,
+            to: Square::G8,
+        });
+        assert!(ok);
+        assert_eq!(
+            game.game_state.get_piece(Square::F8),
+            Some(black(PieceType::Rook))
+        );
+        assert_eq!(game.game_state.get_piece(Square::H8), None);
+    }
+
+    // endregion
+
+    // region: is_move_legal / check
+
+    #[test]
+    fn is_move_legal_rejects_move_leaving_king_in_check() {
+        // Pawn e2 pinned by rook e8; stepping off the pin ray exposes the king.
+        let game = Game::new_game_from_fen("4r3/8/8/8/8/8/4P3/4K3 w - - 0 1");
+        assert!(!game.is_move_legal(Move {
+            piece: white(PieceType::Pawn),
+            from: Square::E2,
+            to: Square::D3,
+        }));
+    }
+
+    #[test]
+    fn is_move_legal_allows_move_along_pin_ray() {
+        let game = Game::new_game_from_fen("4r3/8/8/8/8/8/4P3/4K3 w - - 0 1");
+        assert!(game.is_move_legal(Move {
+            piece: white(PieceType::Pawn),
+            from: Square::E2,
+            to: Square::E3,
+        }));
+    }
+
+    #[test]
+    fn is_move_legal_rejects_wrong_side() {
+        let game = Game::new_game_from_fen("4k3/4p3/8/8/8/8/8/4K3 w - - 0 1");
+        assert!(!game.is_move_legal(Move {
+            piece: black(PieceType::Pawn),
+            from: Square::E7,
+            to: Square::E6,
+        }));
+    }
+
+    #[test]
+    fn is_square_under_attack_true_for_attacked_square() {
+        // Black rook on e8 attacks the whole e-file; side to move is White.
+        let game = Game::new_game_from_fen("4r3/8/8/8/8/8/8/4K3 w - - 0 1");
+        assert!(game.is_square_under_attack(Square::E4));
+    }
+
+    #[test]
+    fn is_square_under_attack_false_for_safe_square() {
+        let game = Game::new_game_from_fen("4r3/8/8/8/8/8/8/4K3 w - - 0 1");
+        assert!(!game.is_square_under_attack(Square::A4));
     }
 }

@@ -5,8 +5,10 @@ mod render {
 
 mod game {
     pub mod domain;
+    pub mod fen;
     pub mod game;
     pub mod game_state;
+    pub mod movegen;
 }
 
 mod inputs {

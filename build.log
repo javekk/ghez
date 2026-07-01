@@ -1,0 +1,129 @@
+warning: unused import: `Board`
+ --> src/render/renderer.rs:1:27
+  |
+1 | use crate::game::domain::{Board, Piece, Side, Square};
+  |                           ^^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default
+
+warning: constant `CELL` is never used
+  --> src/render/theme.rs:10:11
+   |
+10 | pub const CELL: u32 = PIECE_SIZE;
+   |           ^^^^
+   |
+   = note: `#[warn(dead_code)]` on by default
+
+warning: constant `HIGHLIGHT` is never used
+  --> src/render/theme.rs:15:11
+   |
+15 | pub const HIGHLIGHT: Color = Color::from_rgba(100, 200, 100, 160);
+   |           ^^^^^^^^^
+
+warning: associated functions `new` and `new_game` are never used
+  --> src/game/game.rs:15:12
+   |
+13 | impl Game {
+   | --------- associated functions in this implementation
+14 |     // region: game
+15 |     pub fn new() -> Self {
+   |            ^^^
+...
+21 |     pub fn new_game() -> Self {
+   |            ^^^^^^^^
+
+warning: `ghez` (bin "ghez" test) generated 4 warnings (run `cargo fix --bin "ghez" --tests` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.03s
+     Running unittests src/main.rs (target/debug/deps/ghez-61dd5ec071aa0624)
+
+running 87 tests
+test game::domain::tests::from_index_returns_none_for_out_of_range ... ok
+test game::domain::tests::from_index_returns_square_for_valid_range ... ok
+test game::domain::tests::square_as_usize_round_trips_through_from_index ... ok
+test game::game::tests::a_file_pawn_does_not_wrap_to_h_file_on_capture ... ok
+test game::game::tests::bishop_can_move_in_all_squares_not_blocked_by_friendly_pieces ... ok
+test game::game::tests::bishop_can_move_in_all_squares_until_finds_first_eneny_piece ... ok
+test game::game::tests::bishop_can_move_in_all_squares_until_finds_first_eneny_piece_or_friendly_piece ... ok
+test game::game::tests::black_cannot_castle_queenside ... ok
+test game::game::tests::black_king_can_castle_both_sides ... ok
+test game::game::tests::black_king_can_castle_king_side ... ok
+test game::game::tests::black_king_cannot_castle_kingside_when_f8_attacked_by_white_bishop ... ok
+test game::game::tests::black_pawn_can_take_en_passant ... ok
+test game::game::tests::black_pawn_does_not_capture_friendly_pieces ... ok
+test game::game::tests::black_pawn_on_start_can_double_step_downward ... ok
+test game::game::tests::fen_starting_position_middle_ranks_are_empty ... ok
+test game::game::tests::fen_starting_position_places_black_back_rank ... ok
+test game::game::tests::fen_starting_position_places_white_back_rank ... ok
+test game::game::tests::is_move_legal_allows_move_along_pin_ray ... ok
+test game::game::tests::is_move_legal_rejects_move_leaving_king_in_check ... ok
+test game::game::tests::is_move_legal_rejects_wrong_side ... ok
+test game::game::tests::is_square_under_attack_false_for_safe_square ... ok
+test game::game::tests::is_square_under_attack_true_for_attacked_square ... ok
+test game::game::tests::king_can_move_in_all_squares_and_capture_enemy_pieces ... ok
+test game::game::tests::king_can_move_in_all_squares_but_not_on_friendly_piece ... ok
+test game::game::tests::knight_in_corner_has_two_moves ... ok
+test game::game::tests::knight_is_blocked_by_friendly_piece_and_captures_enemy ... ok
+test game::game::tests::knight_on_empty_board_has_eight_moves_from_center ... ok
+test game::game::tests::make_move_black_double_push_sets_en_passant_behind_pawn ... ok
+test game::game::tests::make_move_black_en_passant_removes_the_captured_pawn ... ok
+test game::game::tests::make_move_captures_enemy_piece ... ok
+test game::game::tests::make_move_black_kingside_castle_moves_rook ... ok
+test game::game::tests::make_move_en_passant_removes_the_captured_pawn ... ok
+test game::game::tests::make_move_moves_the_piece_and_clears_origin ... ok
+test game::game::tests::make_move_king_move_revokes_both_castle_rights ... ok
+test game::game::tests::make_move_kingside_castle_moves_rook ... ok
+test game::game::tests::make_move_rejects_moving_opponent_piece ... ok
+test game::game::tests::make_move_queenside_castle_moves_rook ... ok
+test game::game::tests::make_move_single_push_clears_en_passant ... ok
+test game::game::tests::make_move_rook_move_revokes_that_side_castle_right ... ok
+test game::game::tests::make_move_toggles_side_to_move ... ok
+test game::game::tests::make_move_white_double_push_sets_en_passant_behind_pawn ... ok
+test game::game::tests::pinned_pawn_cannot_move_off_the_pin_ray ... ok
+test game::game::tests::make_move_rejects_illegal_move_and_does_not_mutate ... ok
+test game::game::tests::no_squares_are_under_attack_by_black_pawns ... ok
+test game::game::tests::no_squares_are_under_attack_by_white_bishop_wrong_side_to_move ... ok
+test game::game::tests::no_squares_are_under_attack_by_white_king ... ok
+test game::game::tests::no_squares_are_under_attack_by_white_knights ... ok
+test game::game::tests::queen_can_move_in_all_squares_until_finds_first_eneny_piece_or_friendly_piece ... ok
+test game::game::tests::rook_can_move_in_all_squares_until_finds_first_eneny_piece_or_friendly_piece ... ok
+test game::game::tests::no_squares_are_under_attack_by_black_knight ... ok
+test game::game::tests::rook_can_move_in_all_squares_until_finds_friendly_piece ... ok
+test game::game::tests::no_squares_are_under_attack_by_white_pawns ... ok
+test game::game::tests::squares_are_under_attack_by_black_king ... ok
+test game::game::tests::squares_are_under_attack_by_black_knight ... ok
+test game::game::tests::squares_are_under_attack_by_black_pawn ... ok
+test game::game::tests::squares_are_under_attack_by_black_pawns ... ok
+test game::game::tests::squares_are_under_attack_by_black_bishop ... ok
+test game::game::tests::squares_are_under_attack_by_black_rook_in_corner ... ok
+test game::game::tests::squares_are_under_attack_by_white_knight ... ok
+test game::game::tests::squares_are_under_attack_by_white_king ... ok
+test game::game::tests::squares_are_under_attack_by_white_knights ... ok
+test game::game::tests::squares_are_under_attack_by_white_bishop ... ok
+test game::game::tests::squares_are_under_attack_by_white_pawn ... ok
+test game::game::tests::squares_are_under_attack_by_white_pawns ... ok
+test game::game::tests::white_king_can_castle_kingside_when_path_clear ... ok
+test game::game::tests::white_bishop_ray_blocked_by_friendly_piece ... ok
+test game::game::tests::squares_are_under_attack_by_white_rook ... ok
+test game::game::tests::white_bishop_ray_blocked_by_enemy_piece ... ok
+test game::game::tests::squares_are_under_attack_by_white_queen ... ok
+test game::game::tests::white_king_can_castle_queenside_when_path_clear ... ok
+test game::game::tests::white_king_can_castle_king_side ... ok
+test game::game::tests::white_king_cannot_castle_kingside_when_destination_attacked ... ok
+test game::game::tests::white_king_cannot_castle_kingside_when_path_occupied ... ok
+test game::game::tests::white_king_cannot_castle_kingside_when_transit_attacked ... ok
+test game::game::tests::white_king_cannot_castle_queenside_when_b1_occupied ... ok
+test game::game::tests::white_king_cannot_castle_kingside_without_rights ... ok
+test game::game::tests::white_king_cannot_castle_queenside_when_d1_attacked ... ok
+test game::game::tests::white_king_cannot_castle_when_in_check ... ok
+test game::game::tests::white_pawn_blocked_cannot_advance ... ok
+test game::game::tests::white_pawn_captures_diagonally ... ok
+test game::game::tests::white_pawn_does_not_capture_friendly_pieces ... ok
+test game::game::tests::white_pawn_off_start_only_single_step ... ok
+test game::game::tests::white_pawn_on_start_can_single_or_double_step ... ok
+test game::game::tests::white_pawn_on_start_has_two_forward_moves ... ok
+test game::game::tests::white_rook_ray_blocked_by_enemy_piece ... ok
+test game::game::tests::white_rook_ray_blocked_by_friendly_piece ... ok
+test game::game::tests::white_queen_blocked_on_all_rays ... ok
+
+test result: ok. 87 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
