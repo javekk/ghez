@@ -4,6 +4,23 @@ use crate::game::domain::{
     Square,
 };
 
+pub enum DrawReason {
+    Stalemate,
+    FiftyMoveRule,
+    ThreefoldRepetition,
+    InsufficientMaterial,
+    Agreement,
+}
+
+pub enum GameStatus {
+    Chilling,
+    Battling,
+    Draw(DrawReason),
+    Mated(Side),      //  which side has lost
+    LostOnTime(Side), //  which side has lost
+    RunAway(Side),    //  which side has given up
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 pub struct CastleRights {
     pub white_kingside: bool,

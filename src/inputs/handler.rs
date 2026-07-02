@@ -5,7 +5,7 @@ use macroquad::input::{
 
 use crate::{
     game::{
-        domain::{Piece, Square},
+        domain::{Piece, Side, Square},
         game::Game,
     },
     render::theme,
@@ -93,8 +93,6 @@ impl InputHandler {
     }
 
     fn pixel_to_square(mouse_position: (f32, f32)) -> Option<Square> {
-        // TODO check that we are inside the board
-
         let file = mouse_position.0 / theme::SQUARE_SIZE as f32;
         let rank = mouse_position.1 / theme::SQUARE_SIZE as f32;
 

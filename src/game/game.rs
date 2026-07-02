@@ -1,5 +1,7 @@
 use crate::game::domain::{Move, Piece, PieceType, Side, Square};
-use crate::game::game_state::{CastleRights, GameState};
+use crate::game::game_state::DrawReason::Stalemate;
+use crate::game::game_state::GameStatus::Battling;
+use crate::game::game_state::{CastleRights, GameState, GameStatus};
 use crate::game::{fen, movegen};
 use crate::inputs::handler::InputStatus;
 
@@ -25,6 +27,7 @@ impl Game {
     }
 
     pub fn parse_input(&mut self, input_status: &InputStatus) {
+        // TODO add other user actions like reset game or I don't know
         match input_status {
             InputStatus::Chilling => {}
             InputStatus::Dragging(drag) => {
@@ -45,14 +48,25 @@ impl Game {
     }
 
     pub fn get_legal_moves(&self, piece: Piece, from: Square) -> Vec<Square> {
-        if self.game_state.side != piece.side {
-            return Vec::new();
+        movegen::get_legal_moves(&self.game_state, piece, from)
+    }
+
+    fn is_move_legal(&self, mv: Move) -> bool {
+        movegen::is_move_legal(&self.game_state, mv)
+    }
+
+    pub fn parse_game_status(&self) -> GameStatus {
+        if movegen::is_mate(&self.game_state) {
+            return GameStatus::Mated(self.game_state.side);
         }
 
-        self.get_pseudo_legal_moves(piece, from)
-            .into_iter()
-            .filter(|&to| self.is_move_legal(Move { piece, from, to }))
-            .collect()
+        if movegen::is_draw(&self.game_state) {
+            return GameStatus::Draw(Stalemate);
+        }
+
+        // TODO parse all user actions
+
+        return Battling;
     }
 
     fn make_move(&mut self, mv: Move) -> bool {
@@ -142,19 +156,6 @@ impl Game {
         debug_assert!(self.game_state.move_piece(rook_from, rook_to));
     }
 
-    fn is_move_legal(&self, mv: Move) -> bool {
-        if mv.piece.side != self.game_state.side {
-            return false;
-        }
-
-        let mut state = self.game_state;
-        if !state.move_piece(mv.from, mv.to) {
-            return false;
-        }
-
-        !king_is_in_check(&state)
-    }
-
     fn get_squares_under_attacks(&self) -> Vec<Square> {
         Square::ALL
             .into_iter()
@@ -169,15 +170,6 @@ impl Game {
     fn get_pseudo_legal_moves(&self, piece: Piece, from: Square) -> Vec<Square> {
         movegen::pseudo_legal_moves(&self.game_state, piece, from)
     }
-}
-
-fn king_is_in_check(state: &GameState) -> bool {
-    Square::ALL.into_iter().any(|square| {
-        state
-            .get_piece(square)
-            .is_some_and(|piece| piece.kind == PieceType::King && piece.side == state.side)
-            && movegen::is_square_attacked(state, square)
-    })
 }
 
 fn revoke_right_for_rook_square(rights: &mut CastleRights, side: Side, square: Square) {
