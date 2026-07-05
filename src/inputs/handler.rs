@@ -36,7 +36,9 @@ impl InputHandler {
     }
 
     pub fn poll(&mut self, game: &Game) -> InputStatus {
-        let pos = mouse_position();
+        let pos: (f32, f32) = theme::ui_camera()
+            .screen_to_world(mouse_position().into())
+            .into();
 
         if is_mouse_button_pressed(MouseButton::Left) && self.drag.is_none() {
             let Some(square) = Self::pixel_to_square(pos) else {
@@ -61,8 +63,6 @@ impl InputHandler {
         }
 
         if is_mouse_button_released(MouseButton::Left) && self.drag.is_some() {
-            let pos = mouse_position();
-
             let Some(drag) = self.drag.take() else {
                 println!("This seems an error state");
                 return InputStatus::Chilling;
@@ -97,7 +97,17 @@ impl InputHandler {
         let rank = mouse_position.1 / theme::SQUARE_SIZE as f32;
 
         let ufile = file as i8;
+
+        if ufile > 7 {
+            return None;
+        }
+
         let urank = 7 - (rank as i8);
+
+        if urank > 7 {
+            return None;
+        }
+
         let idx = urank * 8 + ufile;
 
         Square::from_index(idx)

@@ -60,7 +60,7 @@ impl Game {
             return GameStatus::Mated(self.game_state.side);
         }
 
-        if movegen::is_draw(&self.game_state) {
+        if movegen::is_stalemate(&self.game_state) {
             return GameStatus::Draw(Stalemate);
         }
 

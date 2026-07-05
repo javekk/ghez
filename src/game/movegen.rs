@@ -64,7 +64,7 @@ pub fn is_mate(state: &GameState) -> bool {
     king_is_in_check(state) && !are_there_any_legal_moves(state)
 }
 
-pub fn is_draw(state: &GameState) -> bool {
+pub fn is_stalemate(state: &GameState) -> bool {
     !king_is_in_check(state) && !are_there_any_legal_moves(state)
 }
 
@@ -307,7 +307,7 @@ mod tests {
     fn starting_position_is_neither_mate_nor_draw() {
         let state = fen::parse(START_FEN);
         assert!(!is_mate(&state));
-        assert!(!is_draw(&state));
+        assert!(!is_stalemate(&state));
     }
 
     #[test]
@@ -315,7 +315,7 @@ mod tests {
         // 1.f3 e5 2.g4 Qh4#
         let state = fen::parse("rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 0 3");
         assert!(is_mate(&state));
-        assert!(!is_draw(&state));
+        assert!(!is_stalemate(&state));
     }
 
     #[test]
@@ -343,14 +343,14 @@ mod tests {
     fn check_with_escape_square_is_not_mate() {
         let state = fen::parse("4r2k/8/8/8/8/8/8/4K3 w - - 0 1");
         assert!(!is_mate(&state));
-        assert!(!is_draw(&state));
+        assert!(!is_stalemate(&state));
     }
 
     #[test]
     fn stalemate_is_draw_not_mate() {
         // Black king h8 has no moves but is not in check.
         let state = fen::parse("7k/5Q2/6K1/8/8/8/8/8 b - - 0 1");
-        assert!(is_draw(&state));
+        assert!(is_stalemate(&state));
         assert!(!is_mate(&state));
     }
 

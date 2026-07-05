@@ -1,5 +1,6 @@
 use crate::game::domain::{Board, Piece, Side, Square};
-use crate::game::game_state::GameState;
+use crate::game::game::Game;
+use crate::game::game_state::{DrawReason, GameState, GameStatus};
 use crate::inputs;
 use crate::inputs::handler::InputStatus;
 use crate::render::theme;
@@ -207,16 +208,50 @@ impl Renderer {
         }
     }
 
-    pub async fn run(&self, game_state: &GameState, input_status: &InputStatus) {
+    fn draw_board(&self, game: &Game, input_status: &InputStatus) {
         clear_background(theme::BORDER_COLOR);
 
         self.draw_squares();
         self.draw_borders();
-        self.draw_pieces(game_state, input_status);
+        self.draw_pieces(&game.game_state, input_status);
 
         if let InputStatus::Dragging(drag) = input_status {
             self.draw_legal_moves_dots(&drag.legal_moves);
         }
+    }
+
+    pub async fn run(&self, game: &Game, input_status: &InputStatus) {
+        set_camera(&theme::ui_camera());
+
+        self.draw_board(game, input_status);
+
+        match game.parse_game_status() {
+            GameStatus::Chilling => {}
+            GameStatus::Battling => { /* Games is going on */ }
+            GameStatus::Draw(draw_reason) => {
+                println!("It's a draw");
+                match draw_reason {
+                    DrawReason::Stalemate => {
+                        println!("Stalemate")
+                    }
+                    DrawReason::FiftyMoveRule => todo!(),
+                    DrawReason::ThreefoldRepetition => todo!(),
+                    DrawReason::InsufficientMaterial => todo!(),
+                    DrawReason::Agreement => todo!(),
+                }
+            }
+            GameStatus::Mated(side) => {
+                let winner = if side == Side::White {
+                    "Black"
+                } else {
+                    "White"
+                };
+                println!("{} has won the game!", winner);
+            }
+            GameStatus::LostOnTime(side) => todo!(),
+            GameStatus::RunAway(side) => todo!(),
+        }
+
         next_frame().await
     }
 }
