@@ -35,10 +35,7 @@ pub struct Renderer {
 impl Renderer {
     pub async fn new() -> Self {
         // Load main window
-        request_new_screen_size(
-            ((theme::SQUARE_SIZE * 8) + theme::BORDER / 2) as f32,
-            ((theme::SQUARE_SIZE * 8) + theme::BORDER / 2) as f32,
-        );
+        request_new_screen_size(theme::VIRTUAL_W, theme::VIRTUAL_H);
 
         // Load piece sets
         let texture = load_texture("assets/pieces/chess_sprites.png")
@@ -189,10 +186,12 @@ impl Renderer {
     fn draw_dragged_piece(&self, piece: Piece, pos: (f32, f32)) {
         let square = theme::SQUARE_SIZE as f32;
 
+        let real_pos: (f32, f32) = theme::ui_camera().screen_to_world(pos.into()).into();
+
         draw_texture_ex(
             &self.texture,
-            pos.0 - square / 2.,
-            pos.1 - square / 2.,
+            real_pos.0 - square / 2.,
+            real_pos.1 - square / 2.,
             WHITE,
             self.get_piece_texture(piece),
         );
@@ -220,10 +219,15 @@ impl Renderer {
         }
     }
 
+    fn draw_shell(&self, game: &Game, input_status: &InputStatus) {
+        Self::draw_new_game_button(input_status);
+    }
+
     pub async fn run(&self, game: &Game, input_status: &InputStatus) {
         set_camera(&theme::ui_camera());
 
         self.draw_board(game, input_status);
+        self.draw_shell(game, input_status);
 
         match game.parse_game_status() {
             GameStatus::Chilling => {}
@@ -253,5 +257,29 @@ impl Renderer {
         }
 
         next_frame().await
+    }
+
+    fn draw_button(label: &str, rect: Rect, input_status: &InputStatus) {
+        let mouse = theme::ui_camera().screen_to_world(mouse_position().into());
+        let hover = rect.contains(mouse);
+        let background = if hover && !matches!(*input_status, InputStatus::Dragging(_)) {
+            theme::BUTTON_COLOR_HIGHLIGHT
+        } else {
+            theme::BUTTON_COLOR
+        };
+
+        draw_rectangle(rect.x, rect.y, rect.w, rect.h, background);
+        let dims = measure_text(label, None, theme::FONT_SIZE as u16, 1.0);
+        draw_text(
+            label,
+            rect.x + (rect.w - dims.width) / 2.,
+            rect.y + (rect.h + dims.offset_y) / 2.,
+            theme::FONT_SIZE as f32,
+            WHITE,
+        );
+    }
+
+    fn draw_new_game_button(input_status: &InputStatus) {
+        Self::draw_button("New Game", theme::new_game_button(), input_status);
     }
 }

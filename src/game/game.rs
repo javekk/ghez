@@ -1,4 +1,4 @@
-use crate::game::domain::{Move, Piece, PieceType, Side, Square};
+use crate::game::domain::{self, Move, Piece, PieceType, Side, Square};
 use crate::game::game_state::DrawReason::Stalemate;
 use crate::game::game_state::GameStatus::Battling;
 use crate::game::game_state::{CastleRights, GameState, GameStatus};
@@ -44,6 +44,12 @@ impl Game {
                 });
             }
             InputStatus::Releasing(..) => {}
+            InputStatus::FiringNewGame(fen) => {
+                *self = match fen {
+                    Some(f) => Game::new_game_from_fen(f),
+                    None => Game::new_game_from_fen(domain::INITIAL_POSITION),
+                };
+            }
         }
     }
 

@@ -28,8 +28,8 @@ async fn main() {
     let mut input_handler: InputHandler = InputHandler::new();
 
     loop {
-        let input_status = input_handler.poll(&game);
-        game.parse_input(&input_status);
-        renderer.run(&game, &input_status).await;
+        let user_inputs = input_handler.poll(&game);
+        game.parse_input(&user_inputs);
+        renderer.run(&game, &user_inputs).await;
     }
 }

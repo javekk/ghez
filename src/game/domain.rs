@@ -256,6 +256,10 @@ impl Move {
     }
 }
 
+pub const INITIAL_POSITION: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1 ";
+pub const KIWIPETE: &str = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1";
+pub const EASY_POSITION: &str = "8/8/8/8/8/5k2/4p3/4K3 b - - 0 1";
+
 #[cfg(test)]
 mod tests {
     use super::*;

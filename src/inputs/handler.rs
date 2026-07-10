@@ -1,6 +1,9 @@
-use macroquad::input::{
-    MouseButton, is_mouse_button_down, is_mouse_button_pressed, is_mouse_button_released,
-    mouse_position,
+use macroquad::{
+    input::{
+        MouseButton, is_mouse_button_down, is_mouse_button_pressed, is_mouse_button_released,
+        mouse_position,
+    },
+    math::Vec2,
 };
 
 use crate::{
@@ -24,6 +27,7 @@ pub enum InputStatus {
     Chilling,
     Dragging(Drag),
     Releasing(Drag, Option<Square>),
+    FiringNewGame(Option<String>), // New game from fen or normal game
 }
 
 pub struct InputHandler {
@@ -36,6 +40,31 @@ impl InputHandler {
     }
 
     pub fn poll(&mut self, game: &Game) -> InputStatus {
+        if Self::is_in_shell() && self.drag.is_none() {
+            self.on_shell(game)
+        } else {
+            self.on_board(game)
+        }
+    }
+
+    fn mouse_world() -> Vec2 {
+        theme::ui_camera().screen_to_world(mouse_position().into())
+    }
+
+    fn is_in_shell() -> bool {
+        Self::mouse_world().x > theme::VIRTUAL_H
+    }
+
+    fn on_shell(&mut self, game: &Game) -> InputStatus {
+        if is_mouse_button_pressed(MouseButton::Left)
+            && theme::new_game_button().contains(Self::mouse_world())
+        {
+            return InputStatus::FiringNewGame(None);
+        }
+        InputStatus::Chilling
+    }
+
+    fn on_board(&mut self, game: &Game) -> InputStatus {
         let pos: (f32, f32) = theme::ui_camera()
             .screen_to_world(mouse_position().into())
             .into();
