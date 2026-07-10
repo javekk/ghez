@@ -86,6 +86,9 @@ impl Game {
         self.update_castle_rights(mv, captured_piece);
         self.relocate_rook_on_castle(mv);
 
+        // TODO make the user or engine decide which piece wants in return
+        self.make_pawn_promotion(mv, Some(PieceType::Queen));
+
         self.game_state.side = self.game_state.side.opponent();
         true
     }
@@ -154,6 +157,29 @@ impl Game {
         };
 
         debug_assert!(self.game_state.move_piece(rook_from, rook_to));
+    }
+
+    fn make_pawn_promotion(&mut self, mv: Move, piece_type: Option<PieceType>) {
+        let promote_to = piece_type.unwrap_or(PieceType::Queen);
+        if mv.piece.kind == PieceType::Pawn {
+            match (mv.piece.side, mv.to.rank()) {
+                (Side::White, 7) => self.game_state.set_piece(
+                    mv.to,
+                    Piece {
+                        side: Side::White,
+                        kind: promote_to,
+                    },
+                ),
+                (Side::Black, 0) => self.game_state.set_piece(
+                    mv.to,
+                    Piece {
+                        side: Side::Black,
+                        kind: promote_to,
+                    },
+                ),
+                _ => return,
+            }
+        }
     }
 
     fn get_squares_under_attacks(&self) -> Vec<Square> {
@@ -1622,6 +1648,41 @@ mod tests {
             Some(black(PieceType::Rook))
         );
         assert_eq!(game.game_state.get_piece(Square::H8), None);
+    }
+
+    // endregion
+
+    // region: pawn promotion
+
+    #[test]
+    fn white_pawn_promotes_to_queen_on_eighth_rank() {
+        let mut game = Game::new_game_from_fen("4k3/P7/8/8/8/8/8/4K3 w - - 0 1");
+        let ok = game.make_move(Move {
+            piece: white(PieceType::Pawn),
+            from: Square::A7,
+            to: Square::A8,
+        });
+        assert!(ok);
+        assert_eq!(
+            game.game_state.get_piece(Square::A8),
+            Some(white(PieceType::Queen))
+        );
+        assert_eq!(game.game_state.get_piece(Square::A7), None);
+    }
+
+    #[test]
+    fn black_pawn_promotes_to_queen_on_first_rank() {
+        let mut game = Game::new_game_from_fen("4k3/8/8/8/8/8/p7/4K3 b - - 0 1");
+        let ok = game.make_move(Move {
+            piece: black(PieceType::Pawn),
+            from: Square::A2,
+            to: Square::A1,
+        });
+        assert!(ok);
+        assert_eq!(
+            game.game_state.get_piece(Square::A1),
+            Some(black(PieceType::Queen))
+        );
     }
 
     // endregion
