@@ -208,8 +208,6 @@ impl Renderer {
     }
 
     fn draw_board(&self, game: &Game, input_status: &InputStatus) {
-        clear_background(theme::BORDER_COLOR);
-
         self.draw_squares();
         self.draw_borders();
         self.draw_pieces(&game.game_state, input_status);
@@ -225,6 +223,8 @@ impl Renderer {
 
     pub async fn run(&self, game: &Game, input_status: &InputStatus) {
         set_camera(&theme::ui_camera());
+
+        clear_background(theme::BORDER_COLOR);
 
         self.draw_board(game, input_status);
         self.draw_shell(game, input_status);

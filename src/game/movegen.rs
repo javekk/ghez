@@ -305,7 +305,7 @@ mod tests {
 
     #[test]
     fn starting_position_is_neither_mate_nor_draw() {
-        let state = fen::parse(START_FEN);
+        let state = fen::parse(START_FEN).unwrap();
         assert!(!is_mate(&state));
         assert!(!is_stalemate(&state));
     }
@@ -313,7 +313,8 @@ mod tests {
     #[test]
     fn fools_mate_is_mate() {
         // 1.f3 e5 2.g4 Qh4#
-        let state = fen::parse("rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 0 3");
+        let state =
+            fen::parse("rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 0 3").unwrap();
         assert!(is_mate(&state));
         assert!(!is_stalemate(&state));
     }
@@ -321,27 +322,27 @@ mod tests {
     #[test]
     fn back_rank_mate_is_mate() {
         // Ra8#: king g8 boxed in by its own pawns f7/g7/h7.
-        let state = fen::parse("R5k1/5ppp/8/8/8/8/8/6K1 b - - 0 1");
+        let state = fen::parse("R5k1/5ppp/8/8/8/8/8/6K1 b - - 0 1").unwrap();
         assert!(is_mate(&state));
     }
 
     #[test]
     fn defended_contact_queen_is_mate() {
         // Qe2+ defended by the rook on e8: Kxe2 would be illegal.
-        let state = fen::parse("4r2k/8/8/8/8/8/4q3/4K3 w - - 0 1");
+        let state = fen::parse("4r2k/8/8/8/8/8/4q3/4K3 w - - 0 1").unwrap();
         assert!(is_mate(&state));
     }
 
     #[test]
     fn undefended_contact_queen_is_not_mate() {
         // Same check without the defender: Kxe2 refutes it.
-        let state = fen::parse("7k/8/8/8/8/8/4q3/4K3 w - - 0 1");
+        let state = fen::parse("7k/8/8/8/8/8/4q3/4K3 w - - 0 1").unwrap();
         assert!(!is_mate(&state));
     }
 
     #[test]
     fn check_with_escape_square_is_not_mate() {
-        let state = fen::parse("4r2k/8/8/8/8/8/8/4K3 w - - 0 1");
+        let state = fen::parse("4r2k/8/8/8/8/8/8/4K3 w - - 0 1").unwrap();
         assert!(!is_mate(&state));
         assert!(!is_stalemate(&state));
     }
@@ -349,7 +350,7 @@ mod tests {
     #[test]
     fn stalemate_is_draw_not_mate() {
         // Black king h8 has no moves but is not in check.
-        let state = fen::parse("7k/5Q2/6K1/8/8/8/8/8 b - - 0 1");
+        let state = fen::parse("7k/5Q2/6K1/8/8/8/8/8 b - - 0 1").unwrap();
         assert!(is_stalemate(&state));
         assert!(!is_mate(&state));
     }
@@ -359,7 +360,7 @@ mod tests {
         // Ra1+ with the white king boxed in on h1 by its own pawns; the only
         // reply is the block Rd8-d1. A mate detector that only looks at king
         // moves fails here.
-        let state = fen::parse("3R4/1k6/8/8/8/8/6PP/r6K w - - 0 1");
+        let state = fen::parse("3R4/1k6/8/8/8/8/6PP/r6K w - - 0 1").unwrap();
         assert!(!is_mate(&state));
     }
 }

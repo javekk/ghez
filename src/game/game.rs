@@ -16,9 +16,15 @@ impl Game {
         }
     }
 
-    pub fn new_game_from_fen(fen: &str) -> Self {
+    pub fn new_game_from_fen(fen: &str) -> Result<Self, String> {
+        Ok(Self {
+            game_state: fen::parse(fen)?,
+        })
+    }
+
+    pub fn new_game_from_initial_position() -> Self {
         Self {
-            game_state: fen::parse(fen),
+            game_state: fen::parse(domain::INITIAL_POSITION).unwrap(),
         }
     }
 
@@ -42,12 +48,18 @@ impl Game {
                     from: drag.from,
                     to: *square,
                 });
+                println!("FEN: {:?}", fen::to_fen(self.game_state))
             }
             InputStatus::Releasing(..) => {}
             InputStatus::FiringNewGame(fen) => {
                 *self = match fen {
-                    Some(f) => Game::new_game_from_fen(f),
-                    None => Game::new_game_from_fen(domain::INITIAL_POSITION),
+                    Some(f) => {
+                        Game::new_game_from_fen(f).unwrap_or_else(|e| {
+                            eprintln!("Invalid FEN: {e}"); // TODO set a UI status/toast string
+                            Game::new_game_from_initial_position()
+                        })
+                    }
+                    None => Game::new_game_from_fen(domain::INITIAL_POSITION).unwrap(),
                 };
             }
         }
@@ -96,6 +108,16 @@ impl Game {
         self.make_pawn_promotion(mv, Some(PieceType::Queen));
 
         self.game_state.side = self.game_state.side.opponent();
+
+        if mv.piece.side == Side::Black {
+            self.game_state.fullmove_number = self.game_state.fullmove_number + 1;
+        }
+
+        if captured_piece.is_some() || mv.piece.kind == PieceType::Pawn {
+            self.game_state.halfmove_counter = 0;
+        } else {
+            self.game_state.halfmove_counter = self.game_state.halfmove_counter + 1;
+        }
         true
     }
 
@@ -219,9 +241,6 @@ mod tests {
     use super::*;
     use std::collections::HashSet;
 
-    const START_FEN: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-    const EMPTY_FEN: &str = "8/8/8/8/8/8/8/8 w - - 0 1";
-
     fn moves_set(game: &Game, piece: Piece, sq: Square) -> HashSet<Square> {
         game.get_pseudo_legal_moves(piece, sq).into_iter().collect()
     }
@@ -242,7 +261,7 @@ mod tests {
 
     #[test]
     fn fen_starting_position_places_white_back_rank() {
-        let game = Game::new_game_from_fen(START_FEN);
+        let game = Game::new_game_from_fen(domain::INITIAL_POSITION).unwrap();
         assert_eq!(
             game.game_state.get_piece(Square::A1),
             Some(Piece {
@@ -261,7 +280,7 @@ mod tests {
 
     #[test]
     fn fen_starting_position_places_black_back_rank() {
-        let game = Game::new_game_from_fen(START_FEN);
+        let game = Game::new_game_from_fen(domain::INITIAL_POSITION).unwrap();
         assert_eq!(
             game.game_state.get_piece(Square::E8),
             Some(Piece {
@@ -280,7 +299,7 @@ mod tests {
 
     #[test]
     fn fen_starting_position_middle_ranks_are_empty() {
-        let game = Game::new_game_from_fen(START_FEN);
+        let game = Game::new_game_from_fen(domain::INITIAL_POSITION).unwrap();
         for sq_idx in 16..48 {
             let sq = Square::from_index(sq_idx).unwrap();
             assert!(
@@ -293,7 +312,7 @@ mod tests {
 
     #[test]
     fn knight_on_empty_board_has_eight_moves_from_center() {
-        let game = Game::new_game_from_fen("8/8/8/8/3N4/8/8/8 w - - 0 1");
+        let game = Game::new_game_from_fen("8/8/8/8/3N4/8/8/8 w - - 0 1").unwrap();
         let knight = Piece {
             side: Side::White,
             kind: PieceType::Knight,
@@ -316,7 +335,7 @@ mod tests {
 
     #[test]
     fn knight_in_corner_has_two_moves() {
-        let game = Game::new_game_from_fen("8/8/8/8/8/8/8/N7 w - - 0 1");
+        let game = Game::new_game_from_fen("8/8/8/8/8/8/8/N7 w - - 0 1").unwrap();
         let knight = Piece {
             side: Side::White,
             kind: PieceType::Knight,
@@ -329,7 +348,7 @@ mod tests {
     #[test]
     fn knight_is_blocked_by_friendly_piece_and_captures_enemy() {
         // White knight d4, white pawn f5 (blocks), black pawn e6 (capture).
-        let game = Game::new_game_from_fen("8/8/4p3/5P2/3N4/8/8/8 w - - 0 1");
+        let game = Game::new_game_from_fen("8/8/4p3/5P2/3N4/8/8/8 w - - 0 1").unwrap();
         let knight = Piece {
             side: Side::White,
             kind: PieceType::Knight,
@@ -342,10 +361,11 @@ mod tests {
     #[test]
     fn white_pawn_on_start_can_single_or_double_step() {
         let game = Game::new_game_from_fen(
-            EMPTY_FEN
+            domain::EMPTY_BOARD
                 .replace("8/8/8/8/8/8/8/8", "8/8/8/8/8/8/4P3/8")
                 .as_str(),
-        );
+        )
+        .unwrap();
         let pawn = Piece {
             side: Side::White,
             kind: PieceType::Pawn,
@@ -357,7 +377,7 @@ mod tests {
 
     #[test]
     fn white_pawn_off_start_only_single_step() {
-        let game = Game::new_game_from_fen("8/8/8/8/8/4P3/8/8 w - - 0 1");
+        let game = Game::new_game_from_fen("8/8/8/8/8/4P3/8/8 w - - 0 1").unwrap();
         let pawn = Piece {
             side: Side::White,
             kind: PieceType::Pawn,
@@ -368,7 +388,7 @@ mod tests {
 
     #[test]
     fn white_pawn_blocked_cannot_advance() {
-        let game = Game::new_game_from_fen("8/8/8/8/8/4p3/4P3/8 w - - 0 1");
+        let game = Game::new_game_from_fen("8/8/8/8/8/4p3/4P3/8 w - - 0 1").unwrap();
         let pawn = Piece {
             side: Side::White,
             kind: PieceType::Pawn,
@@ -384,7 +404,7 @@ mod tests {
     #[test]
     fn a_file_pawn_does_not_wrap_to_h_file_on_capture() {
         // White pawn on a2; a black piece sits on h2 (would be "left capture" if file wraps).
-        let game = Game::new_game_from_fen("8/8/8/8/8/8/P6p/8 w - - 0 1");
+        let game = Game::new_game_from_fen("8/8/8/8/8/8/P6p/8 w - - 0 1").unwrap();
         let pawn = Piece {
             side: Side::White,
             kind: PieceType::Pawn,
@@ -396,7 +416,7 @@ mod tests {
 
     #[test]
     fn white_pawn_captures_diagonally() {
-        let game = Game::new_game_from_fen("8/8/8/8/3p1p2/4P3/8/8 w - - 0 1");
+        let game = Game::new_game_from_fen("8/8/8/8/3p1p2/4P3/8/8 w - - 0 1").unwrap();
         let pawn = Piece {
             side: Side::White,
             kind: PieceType::Pawn,
@@ -408,7 +428,7 @@ mod tests {
 
     #[test]
     fn white_pawn_does_not_capture_friendly_pieces() {
-        let game = Game::new_game_from_fen("8/8/8/8/3p1P2/4P3/8/8 w - - 0 1");
+        let game = Game::new_game_from_fen("8/8/8/8/3p1P2/4P3/8/8 w - - 0 1").unwrap();
         let pawn = Piece {
             side: Side::White,
             kind: PieceType::Pawn,
@@ -420,7 +440,7 @@ mod tests {
 
     #[test]
     fn black_pawn_on_start_can_double_step_downward() {
-        let game = Game::new_game_from_fen("8/4p3/8/8/8/8/8/8 b - - 0 1");
+        let game = Game::new_game_from_fen("8/4p3/8/8/8/8/8/8 b - - 0 1").unwrap();
         let pawn = Piece {
             side: Side::Black,
             kind: PieceType::Pawn,
@@ -432,7 +452,7 @@ mod tests {
 
     #[test]
     fn black_pawn_does_not_capture_friendly_pieces() {
-        let game = Game::new_game_from_fen("8/4p3/3PPp2/8/8/8/8/8 b - - 0 1");
+        let game = Game::new_game_from_fen("8/4p3/3PPp2/8/8/8/8/8 b - - 0 1").unwrap();
         let pawn = Piece {
             side: Side::Black,
             kind: PieceType::Pawn,
@@ -444,7 +464,7 @@ mod tests {
 
     #[test]
     fn bishop_can_move_in_all_squares_not_blocked_by_friendly_pieces() {
-        let game = Game::new_game_from_fen("8/8/2N5/8/4B3/8/8/N7 w - - 0 1");
+        let game = Game::new_game_from_fen("8/8/2N5/8/4B3/8/8/N7 w - - 0 1").unwrap();
         let bishop = Piece {
             side: Side::White,
             kind: PieceType::Bishop,
@@ -469,7 +489,7 @@ mod tests {
 
     #[test]
     fn bishop_can_move_in_all_squares_until_finds_first_eneny_piece() {
-        let game = Game::new_game_from_fen("8/1K6/2n5/8/4B3/8/8/N7 w - - 0 1");
+        let game = Game::new_game_from_fen("8/1K6/2n5/8/4B3/8/8/N7 w - - 0 1").unwrap();
         let bishop = Piece {
             side: Side::White,
             kind: PieceType::Bishop,
@@ -495,7 +515,7 @@ mod tests {
 
     #[test]
     fn bishop_can_move_in_all_squares_until_finds_first_eneny_piece_or_friendly_piece() {
-        let game = Game::new_game_from_fen("8/1K6/1N6/4q3/3b4/4k3/8/N7 b - - 0 1");
+        let game = Game::new_game_from_fen("8/1K6/1N6/4q3/3b4/4k3/8/N7 b - - 0 1").unwrap();
         let bishop = Piece {
             side: Side::Black,
             kind: PieceType::Bishop,
@@ -510,7 +530,7 @@ mod tests {
 
     #[test]
     fn rook_can_move_in_all_squares_until_finds_friendly_piece() {
-        let game = Game::new_game_from_fen("8/1K6/1N6/4q3/4b3/4r3/8/N7 b - - 0 1");
+        let game = Game::new_game_from_fen("8/1K6/1N6/4q3/4b3/4r3/8/N7 b - - 0 1").unwrap();
         let rook = Piece {
             side: Side::Black,
             kind: PieceType::Rook,
@@ -534,7 +554,7 @@ mod tests {
 
     #[test]
     fn rook_can_move_in_all_squares_until_finds_first_eneny_piece_or_friendly_piece() {
-        let game = Game::new_game_from_fen("8/1K6/1N6/4q3/4R3/4r3/8/N7 w - - 0 1");
+        let game = Game::new_game_from_fen("8/1K6/1N6/4q3/4R3/4r3/8/N7 w - - 0 1").unwrap();
         let rook = Piece {
             side: Side::White,
             kind: PieceType::Rook,
@@ -558,7 +578,7 @@ mod tests {
 
     #[test]
     fn queen_can_move_in_all_squares_until_finds_first_eneny_piece_or_friendly_piece() {
-        let game = Game::new_game_from_fen("7p/1K6/1N6/4q3/4R3/4r3/8/N7 b - - 0 1");
+        let game = Game::new_game_from_fen("7p/1K6/1N6/4q3/4R3/4r3/8/N7 b - - 0 1").unwrap();
         let queen = Piece {
             side: Side::Black,
             kind: PieceType::Queen,
@@ -596,7 +616,7 @@ mod tests {
 
     #[test]
     fn king_can_move_in_all_squares_but_not_on_friendly_piece() {
-        let game = Game::new_game_from_fen("8/1K6/1N6/4q3/4R3/4r3/8/N7 w - - 0 1");
+        let game = Game::new_game_from_fen("8/1K6/1N6/4q3/4R3/4r3/8/N7 w - - 0 1").unwrap();
         let king = Piece {
             side: Side::White,
             kind: PieceType::King,
@@ -618,7 +638,7 @@ mod tests {
 
     #[test]
     fn king_can_move_in_all_squares_and_capture_enemy_pieces() {
-        let game = Game::new_game_from_fen("8/1K6/1N6/4q3/4R3/4r3/8/Nk6 b - - 0 1");
+        let game = Game::new_game_from_fen("8/1K6/1N6/4q3/4R3/4r3/8/Nk6 b - - 0 1").unwrap();
         let king = Piece {
             side: Side::Black,
             kind: PieceType::King,
@@ -639,7 +659,7 @@ mod tests {
 
     #[test]
     fn squares_are_under_attack_by_white_pawn() {
-        let game = Game::new_game_from_fen("8/8/8/8/3P4/8/8/8 b - - 0 1");
+        let game = Game::new_game_from_fen("8/8/8/8/3P4/8/8/8 b - - 0 1").unwrap();
         let squares = to_hash_set(game.get_squares_under_attacks());
         let expected = to_hash_set([Square::C5, Square::E5]);
 
@@ -648,7 +668,7 @@ mod tests {
 
     #[test]
     fn squares_are_under_attack_by_white_pawns() {
-        let game = Game::new_game_from_fen("8/1P6/8/8/8/8/6P1/8 b - - 0 1");
+        let game = Game::new_game_from_fen("8/1P6/8/8/8/8/6P1/8 b - - 0 1").unwrap();
         let squares = to_hash_set(game.get_squares_under_attacks());
         let expected = to_hash_set([Square::A8, Square::C8, Square::F3, Square::H3]);
 
@@ -657,7 +677,7 @@ mod tests {
 
     #[test]
     fn no_squares_are_under_attack_by_white_pawns() {
-        let game = Game::new_game_from_fen("8/1P6/8/8/8/8/6P1/8 w - - 0 1");
+        let game = Game::new_game_from_fen("8/1P6/8/8/8/8/6P1/8 w - - 0 1").unwrap();
         let squares = to_hash_set(game.get_squares_under_attacks());
         let expected = to_hash_set([]);
 
@@ -666,7 +686,7 @@ mod tests {
 
     #[test]
     fn squares_are_under_attack_by_black_pawn() {
-        let game = Game::new_game_from_fen("8/8/8/8/3p4/8/8/8 w - - 0 1");
+        let game = Game::new_game_from_fen("8/8/8/8/3p4/8/8/8 w - - 0 1").unwrap();
         let squares = to_hash_set(game.get_squares_under_attacks());
         let expected = to_hash_set([Square::C3, Square::E3]);
 
@@ -675,7 +695,7 @@ mod tests {
 
     #[test]
     fn squares_are_under_attack_by_black_pawns() {
-        let game = Game::new_game_from_fen("8/7p/8/8/8/1p6/8/8 w - - 0 1");
+        let game = Game::new_game_from_fen("8/7p/8/8/8/1p6/8/8 w - - 0 1").unwrap();
         let squares = to_hash_set(game.get_squares_under_attacks());
         let expected = to_hash_set([Square::G6, Square::A2, Square::C2]);
 
@@ -684,7 +704,7 @@ mod tests {
 
     #[test]
     fn no_squares_are_under_attack_by_black_pawns() {
-        let game = Game::new_game_from_fen("8/7p/8/8/8/1p6/8/8 b - - 0 1");
+        let game = Game::new_game_from_fen("8/7p/8/8/8/1p6/8/8 b - - 0 1").unwrap();
         let squares = to_hash_set(game.get_squares_under_attacks());
         let expected = to_hash_set([]);
 
@@ -693,7 +713,7 @@ mod tests {
 
     #[test]
     fn squares_are_under_attack_by_white_knight() {
-        let game = Game::new_game_from_fen("8/8/8/4N3/8/8/8/8 b - - 0 1");
+        let game = Game::new_game_from_fen("8/8/8/4N3/8/8/8/8 b - - 0 1").unwrap();
         let squares = to_hash_set(game.get_squares_under_attacks());
         let expected = to_hash_set([
             Square::D3,
@@ -711,7 +731,7 @@ mod tests {
 
     #[test]
     fn squares_are_under_attack_by_white_knights() {
-        let game = Game::new_game_from_fen("8/8/8/4N3/8/4N3/8/8 b - - 0 1");
+        let game = Game::new_game_from_fen("8/8/8/4N3/8/4N3/8/8 b - - 0 1").unwrap();
         let squares = to_hash_set(game.get_squares_under_attacks());
         let expected = to_hash_set([
             Square::D3,
@@ -735,7 +755,7 @@ mod tests {
 
     #[test]
     fn no_squares_are_under_attack_by_white_knights() {
-        let game = Game::new_game_from_fen("8/8/1N6/8/8/6N1/8/8 w - - 0 1");
+        let game = Game::new_game_from_fen("8/8/1N6/8/8/6N1/8/8 w - - 0 1").unwrap();
         let squares = to_hash_set(game.get_squares_under_attacks());
         let expected = to_hash_set([]);
 
@@ -744,7 +764,7 @@ mod tests {
 
     #[test]
     fn squares_are_under_attack_by_black_knight() {
-        let game = Game::new_game_from_fen("8/8/8/8/8/8/8/7n w - - 0 1");
+        let game = Game::new_game_from_fen("8/8/8/8/8/8/8/7n w - - 0 1").unwrap();
         let squares = to_hash_set(game.get_squares_under_attacks());
         let expected = to_hash_set([Square::F2, Square::G3]);
 
@@ -753,7 +773,7 @@ mod tests {
 
     #[test]
     fn no_squares_are_under_attack_by_black_knight() {
-        let game = Game::new_game_from_fen("8/8/8/8/8/8/8/7n b - - 0 1");
+        let game = Game::new_game_from_fen("8/8/8/8/8/8/8/7n b - - 0 1").unwrap();
         let squares = to_hash_set(game.get_squares_under_attacks());
         let expected = to_hash_set([]);
 
@@ -762,7 +782,7 @@ mod tests {
 
     #[test]
     fn squares_are_under_attack_by_white_king() {
-        let game = Game::new_game_from_fen("8/8/8/4K3/8/8/8/8 b - - 0 1");
+        let game = Game::new_game_from_fen("8/8/8/4K3/8/8/8/8 b - - 0 1").unwrap();
         let squares = to_hash_set(game.get_squares_under_attacks());
         let expected = to_hash_set([
             Square::D4,
@@ -780,7 +800,7 @@ mod tests {
 
     #[test]
     fn no_squares_are_under_attack_by_white_king() {
-        let game = Game::new_game_from_fen("8/8/8/4K3/8/8/8/8 w - - 0 1");
+        let game = Game::new_game_from_fen("8/8/8/4K3/8/8/8/8 w - - 0 1").unwrap();
         let squares = to_hash_set(game.get_squares_under_attacks());
         let expected = to_hash_set([]);
 
@@ -789,7 +809,7 @@ mod tests {
 
     #[test]
     fn squares_are_under_attack_by_black_king() {
-        let game = Game::new_game_from_fen("k7/8/8/4K3/8/8/8/8 w - - 0 1");
+        let game = Game::new_game_from_fen("k7/8/8/4K3/8/8/8/8 w - - 0 1").unwrap();
         let squares = to_hash_set(game.get_squares_under_attacks());
         let expected = to_hash_set([Square::A7, Square::B7, Square::B8]);
 
@@ -798,7 +818,7 @@ mod tests {
 
     #[test]
     fn squares_are_under_attack_by_white_bishop() {
-        let game = Game::new_game_from_fen("8/8/8/3B4/8/8/8/8 b - - 0 1");
+        let game = Game::new_game_from_fen("8/8/8/3B4/8/8/8/8 b - - 0 1").unwrap();
         let squares = to_hash_set(game.get_squares_under_attacks());
         let expected = to_hash_set([
             Square::A2,
@@ -821,7 +841,7 @@ mod tests {
 
     #[test]
     fn white_bishop_ray_blocked_by_friendly_piece() {
-        let game = Game::new_game_from_fen("8/5P2/8/3B4/8/8/8/8 b - - 0 1");
+        let game = Game::new_game_from_fen("8/5P2/8/3B4/8/8/8/8 b - - 0 1").unwrap();
         let squares = to_hash_set(game.get_squares_under_attacks());
         let expected = to_hash_set([
             Square::A2,
@@ -845,7 +865,7 @@ mod tests {
 
     #[test]
     fn white_bishop_ray_blocked_by_enemy_piece() {
-        let game = Game::new_game_from_fen("8/5p2/8/3B4/8/8/8/8 b - - 0 1");
+        let game = Game::new_game_from_fen("8/5p2/8/3B4/8/8/8/8 b - - 0 1").unwrap();
         let squares = to_hash_set(game.get_squares_under_attacks());
         let expected = to_hash_set([
             Square::A2,
@@ -867,7 +887,7 @@ mod tests {
 
     #[test]
     fn squares_are_under_attack_by_black_bishop() {
-        let game = Game::new_game_from_fen("8/8/8/3b4/8/8/8/8 w - - 0 1");
+        let game = Game::new_game_from_fen("8/8/8/3b4/8/8/8/8 w - - 0 1").unwrap();
         let squares = to_hash_set(game.get_squares_under_attacks());
         let expected = to_hash_set([
             Square::A2,
@@ -890,7 +910,7 @@ mod tests {
 
     #[test]
     fn no_squares_are_under_attack_by_white_bishop_wrong_side_to_move() {
-        let game = Game::new_game_from_fen("8/8/8/3B4/8/8/8/8 w - - 0 1");
+        let game = Game::new_game_from_fen("8/8/8/3B4/8/8/8/8 w - - 0 1").unwrap();
         let squares = to_hash_set(game.get_squares_under_attacks());
         let expected = to_hash_set([]);
 
@@ -899,7 +919,7 @@ mod tests {
 
     #[test]
     fn squares_are_under_attack_by_white_rook() {
-        let game = Game::new_game_from_fen("8/8/8/3R4/8/8/8/8 b - - 0 1");
+        let game = Game::new_game_from_fen("8/8/8/3R4/8/8/8/8 b - - 0 1").unwrap();
         let squares = to_hash_set(game.get_squares_under_attacks());
         let expected = to_hash_set([
             Square::A5,
@@ -923,7 +943,7 @@ mod tests {
 
     #[test]
     fn white_rook_ray_blocked_by_friendly_piece() {
-        let game = Game::new_game_from_fen("8/3P4/8/3R4/8/8/8/8 b - - 0 1");
+        let game = Game::new_game_from_fen("8/3P4/8/3R4/8/8/8/8 b - - 0 1").unwrap();
         let squares = to_hash_set(game.get_squares_under_attacks());
         let expected = to_hash_set([
             Square::A5,
@@ -948,7 +968,7 @@ mod tests {
 
     #[test]
     fn white_rook_ray_blocked_by_enemy_piece() {
-        let game = Game::new_game_from_fen("8/3p4/8/3R4/8/8/8/8 b - - 0 1");
+        let game = Game::new_game_from_fen("8/3p4/8/3R4/8/8/8/8 b - - 0 1").unwrap();
         let squares = to_hash_set(game.get_squares_under_attacks());
         let expected = to_hash_set([
             Square::A5,
@@ -971,7 +991,7 @@ mod tests {
 
     #[test]
     fn squares_are_under_attack_by_black_rook_in_corner() {
-        let game = Game::new_game_from_fen("r7/8/8/8/8/8/8/8 w - - 0 1");
+        let game = Game::new_game_from_fen("r7/8/8/8/8/8/8/8 w - - 0 1").unwrap();
         let squares = to_hash_set(game.get_squares_under_attacks());
         let expected = to_hash_set([
             Square::A1,
@@ -995,7 +1015,7 @@ mod tests {
 
     #[test]
     fn squares_are_under_attack_by_white_queen() {
-        let game = Game::new_game_from_fen("8/8/8/3Q4/8/8/8/8 b - - 0 1");
+        let game = Game::new_game_from_fen("8/8/8/3Q4/8/8/8/8 b - - 0 1").unwrap();
         let squares = to_hash_set(game.get_squares_under_attacks());
         let expected = to_hash_set([
             Square::A5,
@@ -1032,7 +1052,7 @@ mod tests {
 
     #[test]
     fn white_king_can_castle_kingside_when_path_clear() {
-        let game = Game::new_game_from_fen("4k3/8/8/8/8/8/8/4K2R w K - 0 1");
+        let game = Game::new_game_from_fen("4k3/8/8/8/8/8/8/4K2R w K - 0 1").unwrap();
         let king = Piece {
             side: Side::White,
             kind: PieceType::King,
@@ -1043,7 +1063,7 @@ mod tests {
 
     #[test]
     fn white_king_cannot_castle_kingside_without_rights() {
-        let game = Game::new_game_from_fen("4k3/8/8/8/8/8/8/4K2R w - - 0 1");
+        let game = Game::new_game_from_fen("4k3/8/8/8/8/8/8/4K2R w - - 0 1").unwrap();
         let king = Piece {
             side: Side::White,
             kind: PieceType::King,
@@ -1054,7 +1074,7 @@ mod tests {
 
     #[test]
     fn white_king_cannot_castle_kingside_when_path_occupied() {
-        let game = Game::new_game_from_fen("4k3/8/8/8/8/8/8/4KB1R w K - 0 1");
+        let game = Game::new_game_from_fen("4k3/8/8/8/8/8/8/4KB1R w K - 0 1").unwrap();
         let king = Piece {
             side: Side::White,
             kind: PieceType::King,
@@ -1065,7 +1085,7 @@ mod tests {
 
     #[test]
     fn white_king_cannot_castle_kingside_when_transit_attacked() {
-        let game = Game::new_game_from_fen("4kr2/8/8/8/8/8/8/4K2R w K - 0 1");
+        let game = Game::new_game_from_fen("4kr2/8/8/8/8/8/8/4K2R w K - 0 1").unwrap();
         let king = Piece {
             side: Side::White,
             kind: PieceType::King,
@@ -1076,7 +1096,7 @@ mod tests {
 
     #[test]
     fn white_king_cannot_castle_kingside_when_destination_attacked() {
-        let game = Game::new_game_from_fen("4k1r1/8/8/8/8/8/8/4K2R w K - 0 1");
+        let game = Game::new_game_from_fen("4k1r1/8/8/8/8/8/8/4K2R w K - 0 1").unwrap();
         let king = Piece {
             side: Side::White,
             kind: PieceType::King,
@@ -1087,7 +1107,7 @@ mod tests {
 
     #[test]
     fn white_king_cannot_castle_when_in_check() {
-        let game = Game::new_game_from_fen("4k3/4r3/8/8/8/8/8/4K2R w K - 0 1");
+        let game = Game::new_game_from_fen("4k3/4r3/8/8/8/8/8/4K2R w K - 0 1").unwrap();
         let king = Piece {
             side: Side::White,
             kind: PieceType::King,
@@ -1098,7 +1118,7 @@ mod tests {
 
     #[test]
     fn white_king_can_castle_queenside_when_path_clear() {
-        let game = Game::new_game_from_fen("4k3/8/8/8/8/8/8/R3K3 w Q - 0 1");
+        let game = Game::new_game_from_fen("4k3/8/8/8/8/8/8/R3K3 w Q - 0 1").unwrap();
         let king = Piece {
             side: Side::White,
             kind: PieceType::King,
@@ -1109,7 +1129,7 @@ mod tests {
 
     #[test]
     fn white_king_cannot_castle_queenside_when_b1_occupied() {
-        let game = Game::new_game_from_fen("4k3/8/8/8/8/8/8/RN2K3 w Q - 0 1");
+        let game = Game::new_game_from_fen("4k3/8/8/8/8/8/8/RN2K3 w Q - 0 1").unwrap();
         let king = Piece {
             side: Side::White,
             kind: PieceType::King,
@@ -1120,7 +1140,7 @@ mod tests {
 
     #[test]
     fn white_king_cannot_castle_queenside_when_d1_attacked() {
-        let game = Game::new_game_from_fen("3rk3/8/8/8/8/8/8/R3K3 w Q - 0 1");
+        let game = Game::new_game_from_fen("3rk3/8/8/8/8/8/8/R3K3 w Q - 0 1").unwrap();
         let king = Piece {
             side: Side::White,
             kind: PieceType::King,
@@ -1131,7 +1151,7 @@ mod tests {
 
     #[test]
     fn black_king_can_castle_both_sides() {
-        let game = Game::new_game_from_fen("r3k2r/8/8/8/8/8/8/4K3 b kq - 0 1");
+        let game = Game::new_game_from_fen("r3k2r/8/8/8/8/8/8/4K3 b kq - 0 1").unwrap();
         let king = Piece {
             side: Side::Black,
             kind: PieceType::King,
@@ -1143,7 +1163,7 @@ mod tests {
 
     #[test]
     fn black_king_cannot_castle_kingside_when_f8_attacked_by_white_bishop() {
-        let game = Game::new_game_from_fen("4k2r/8/8/8/8/B7/8/4K3 b k - 0 1");
+        let game = Game::new_game_from_fen("4k2r/8/8/8/8/B7/8/4K3 b k - 0 1").unwrap();
         let king = Piece {
             side: Side::Black,
             kind: PieceType::King,
@@ -1154,7 +1174,7 @@ mod tests {
 
     #[test]
     fn white_queen_blocked_on_all_rays() {
-        let game = Game::new_game_from_fen("8/8/8/2PPP3/2PQP3/2PPP3/8/8 b - - 0 1");
+        let game = Game::new_game_from_fen("8/8/8/2PPP3/2PQP3/2PPP3/8/8 b - - 0 1").unwrap();
         let squares = to_hash_set(game.get_squares_under_attacks());
         let expected = to_hash_set([
             Square::C3,
@@ -1182,7 +1202,7 @@ mod tests {
 
     #[test]
     fn white_pawn_on_start_has_two_forward_moves() {
-        let game = Game::new_game_from_fen("4k3/8/8/8/8/8/4P3/4K3 w - - 0 1");
+        let game = Game::new_game_from_fen("4k3/8/8/8/8/8/4P3/4K3 w - - 0 1").unwrap();
         let pawn = Piece {
             side: Side::White,
             kind: PieceType::Pawn,
@@ -1194,7 +1214,7 @@ mod tests {
 
     #[test]
     fn pinned_pawn_cannot_move_off_the_pin_ray() {
-        let game = Game::new_game_from_fen("k3r3/8/8/8/6b1/8/4P3/3K4 w - - 0 1");
+        let game = Game::new_game_from_fen("k3r3/8/8/8/6b1/8/4P3/3K4 w - - 0 1").unwrap();
         let pawn = Piece {
             side: Side::White,
             kind: PieceType::Pawn,
@@ -1211,7 +1231,8 @@ mod tests {
     fn white_king_can_castle_king_side() {
         let game = Game::new_game_from_fen(
             "rnbqkb1r/ppp2ppp/3ppn2/8/8/3BPN2/PPPP1PPP/RNBQK2R w KQkq - 0 1",
-        );
+        )
+        .unwrap();
         let king = Piece {
             side: Side::White,
             kind: PieceType::King,
@@ -1225,7 +1246,8 @@ mod tests {
     fn black_king_can_castle_king_side() {
         let game = Game::new_game_from_fen(
             "rnbqk2r/ppp1bppp/3ppn2/8/8/1P1BPN2/P1PP1PPP/RNBQK2R b KQkq - 0 1",
-        );
+        )
+        .unwrap();
         let king = Piece {
             side: Side::Black,
             kind: PieceType::King,
@@ -1239,7 +1261,8 @@ mod tests {
     fn black_pawn_can_take_en_passant() {
         let game = Game::new_game_from_fen(
             "r1bqkbnr/1ppp1ppp/2n5/1B2p3/pP2P3/3P1N2/P1P2PPP/RNBQK2R b KQkq b3 0 5",
-        );
+        )
+        .unwrap();
         let pawn = Piece {
             side: Side::Black,
             kind: PieceType::Pawn,
@@ -1252,7 +1275,8 @@ mod tests {
     #[test]
     fn black_cannot_castle_queenside() {
         let game =
-            Game::new_game_from_fen("r3k3/pppnqNpp/8/4p3/Q1Bn2b1/2P5/PP1P1KPP/RNB4R b q - 0 13");
+            Game::new_game_from_fen("r3k3/pppnqNpp/8/4p3/Q1Bn2b1/2P5/PP1P1KPP/RNB4R b q - 0 13")
+                .unwrap();
         let king = Piece {
             side: Side::Black,
             kind: PieceType::King,
@@ -1268,12 +1292,14 @@ mod tests {
     fn fen_parses_side_to_move() {
         assert_eq!(
             Game::new_game_from_fen("8/8/8/8/8/8/8/8 w - - 0 1")
+                .unwrap()
                 .game_state
                 .side,
             Side::White
         );
         assert_eq!(
             Game::new_game_from_fen("8/8/8/8/8/8/8/8 b - - 0 1")
+                .unwrap()
                 .game_state
                 .side,
             Side::Black
@@ -1282,7 +1308,8 @@ mod tests {
 
     #[test]
     fn fen_parses_all_castle_rights() {
-        let rights = Game::new_game_from_fen(START_FEN)
+        let rights = Game::new_game_from_fen(domain::INITIAL_POSITION)
+            .unwrap()
             .game_state
             .available_castle;
         assert!(rights.white_kingside);
@@ -1294,6 +1321,7 @@ mod tests {
     #[test]
     fn fen_parses_partial_castle_rights() {
         let rights = Game::new_game_from_fen("8/8/8/8/8/8/8/8 w Kq - 0 1")
+            .unwrap()
             .game_state
             .available_castle;
         assert!(rights.white_kingside);
@@ -1305,6 +1333,7 @@ mod tests {
     #[test]
     fn fen_parses_no_castle_rights() {
         let rights = Game::new_game_from_fen("8/8/8/8/8/8/8/8 w - - 0 1")
+            .unwrap()
             .game_state
             .available_castle;
         assert!(!rights.is_castle_still_available());
@@ -1314,6 +1343,7 @@ mod tests {
     fn fen_parses_en_passant_square() {
         assert_eq!(
             Game::new_game_from_fen("8/8/8/8/8/8/8/8 w - e3 0 1")
+                .unwrap()
                 .game_state
                 .en_passant,
             Some(Square::E3)
@@ -1324,6 +1354,7 @@ mod tests {
     fn fen_parses_no_en_passant_square() {
         assert_eq!(
             Game::new_game_from_fen("8/8/8/8/8/8/8/8 w - - 0 1")
+                .unwrap()
                 .game_state
                 .en_passant,
             None
@@ -1332,7 +1363,7 @@ mod tests {
 
     #[test]
     fn fen_empty_board_has_no_pieces() {
-        let game = Game::new_game_from_fen(EMPTY_FEN);
+        let game = Game::new_game_from_fen(domain::EMPTY_BOARD).unwrap();
         for i in 0..64 {
             assert!(
                 game.game_state
@@ -1344,7 +1375,7 @@ mod tests {
 
     #[test]
     fn fen_places_all_piece_types_on_correct_squares() {
-        let game = Game::new_game_from_fen("8/8/8/8/8/8/8/RNBQKBNR w - - 0 1");
+        let game = Game::new_game_from_fen("8/8/8/8/8/8/8/RNBQKBNR w - - 0 1").unwrap();
         let expected = [
             (Square::A1, PieceType::Rook),
             (Square::B1, PieceType::Knight),
@@ -1375,7 +1406,7 @@ mod tests {
             PieceType::Queen,
             PieceType::King,
         ] {
-            let game = Game::new_game_from_fen("8/8/8/8/3Q4/8/8/8 w - - 0 1");
+            let game = Game::new_game_from_fen("8/8/8/8/3Q4/8/8/8 w - - 0 1").unwrap();
             let moves = game.get_pseudo_legal_moves(white(kind), Square::D4);
             assert!(
                 !moves.is_empty(),
@@ -1391,7 +1422,7 @@ mod tests {
 
     #[test]
     fn get_legal_moves_includes_en_passant_capture() {
-        let game = Game::new_game_from_fen("4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 1");
+        let game = Game::new_game_from_fen("4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 1").unwrap();
         let legal: HashSet<Square> =
             to_hash_set(game.get_legal_moves(white(PieceType::Pawn), Square::E5));
         assert!(legal.contains(&Square::D6));
@@ -1399,7 +1430,7 @@ mod tests {
 
     #[test]
     fn get_legal_moves_empty_for_wrong_side_piece() {
-        let game = Game::new_game_from_fen("4k3/4p3/8/8/8/8/8/4K3 w - - 0 1");
+        let game = Game::new_game_from_fen("4k3/4p3/8/8/8/8/8/4K3 w - - 0 1").unwrap();
         assert!(
             game.get_legal_moves(black(PieceType::Pawn), Square::E7)
                 .is_empty()
@@ -1413,7 +1444,7 @@ mod tests {
     #[test]
     fn en_passant_available_immediately_after_double_push() {
         // Black double-pushes d7-d5, then white can capture e5xd6 e.p. next move.
-        let mut game = Game::new_game_from_fen("4k3/3p4/8/4P3/8/8/8/4K3 b - - 0 1");
+        let mut game = Game::new_game_from_fen("4k3/3p4/8/4P3/8/8/8/4K3 b - - 0 1").unwrap();
         game.make_move(Move {
             piece: black(PieceType::Pawn),
             from: Square::D7,
@@ -1434,7 +1465,7 @@ mod tests {
 
     #[test]
     fn make_move_moves_the_piece_and_clears_origin() {
-        let mut game = Game::new_game_from_fen("4k3/8/8/8/8/8/4P3/4K3 w - - 0 1");
+        let mut game = Game::new_game_from_fen("4k3/8/8/8/8/8/4P3/4K3 w - - 0 1").unwrap();
         let ok = game.make_move(Move {
             piece: white(PieceType::Pawn),
             from: Square::E2,
@@ -1450,7 +1481,7 @@ mod tests {
 
     #[test]
     fn make_move_toggles_side_to_move() {
-        let mut game = Game::new_game_from_fen("4k3/8/8/8/8/8/4P3/4K3 w - - 0 1");
+        let mut game = Game::new_game_from_fen("4k3/8/8/8/8/8/4P3/4K3 w - - 0 1").unwrap();
         assert_eq!(game.game_state.side, Side::White);
         game.make_move(Move {
             piece: white(PieceType::Pawn),
@@ -1462,7 +1493,7 @@ mod tests {
 
     #[test]
     fn make_move_rejects_illegal_move_and_does_not_mutate() {
-        let mut game = Game::new_game_from_fen("4k3/8/8/8/8/8/4P3/4K3 w - - 0 1");
+        let mut game = Game::new_game_from_fen("4k3/8/8/8/8/8/4P3/4K3 w - - 0 1").unwrap();
         let ok = game.make_move(Move {
             piece: white(PieceType::Pawn),
             from: Square::E2,
@@ -1479,7 +1510,7 @@ mod tests {
 
     #[test]
     fn make_move_rejects_moving_opponent_piece() {
-        let mut game = Game::new_game_from_fen("4k3/4p3/8/8/8/8/8/4K3 w - - 0 1");
+        let mut game = Game::new_game_from_fen("4k3/4p3/8/8/8/8/8/4K3 w - - 0 1").unwrap();
         let ok = game.make_move(Move {
             piece: black(PieceType::Pawn),
             from: Square::E7,
@@ -1491,7 +1522,7 @@ mod tests {
 
     #[test]
     fn make_move_captures_enemy_piece() {
-        let mut game = Game::new_game_from_fen("4k3/8/8/3p4/4P3/8/8/4K3 w - - 0 1");
+        let mut game = Game::new_game_from_fen("4k3/8/8/3p4/4P3/8/8/4K3 w - - 0 1").unwrap();
         let ok = game.make_move(Move {
             piece: white(PieceType::Pawn),
             from: Square::E4,
@@ -1506,7 +1537,7 @@ mod tests {
 
     #[test]
     fn make_move_white_double_push_sets_en_passant_behind_pawn() {
-        let mut game = Game::new_game_from_fen("4k3/8/8/8/8/8/4P3/4K3 w - - 0 1");
+        let mut game = Game::new_game_from_fen("4k3/8/8/8/8/8/4P3/4K3 w - - 0 1").unwrap();
         game.make_move(Move {
             piece: white(PieceType::Pawn),
             from: Square::E2,
@@ -1517,7 +1548,7 @@ mod tests {
 
     #[test]
     fn make_move_black_double_push_sets_en_passant_behind_pawn() {
-        let mut game = Game::new_game_from_fen("4k3/4p3/8/8/8/8/8/4K3 b - - 0 1");
+        let mut game = Game::new_game_from_fen("4k3/4p3/8/8/8/8/8/4K3 b - - 0 1").unwrap();
         game.make_move(Move {
             piece: black(PieceType::Pawn),
             from: Square::E7,
@@ -1529,7 +1560,7 @@ mod tests {
     #[test]
     fn make_move_en_passant_removes_the_captured_pawn() {
         // White pawn e5, black pawn d5 just double-pushed (en passant target d6).
-        let mut game = Game::new_game_from_fen("4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 1");
+        let mut game = Game::new_game_from_fen("4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 1").unwrap();
         let ok = game.make_move(Move {
             piece: white(PieceType::Pawn),
             from: Square::E5,
@@ -1551,7 +1582,7 @@ mod tests {
     #[test]
     fn make_move_black_en_passant_removes_the_captured_pawn() {
         // Black pawn d4, white pawn e4 just double-pushed (en passant target e3).
-        let mut game = Game::new_game_from_fen("4k3/8/8/8/3pP3/8/8/4K3 b - e3 0 1");
+        let mut game = Game::new_game_from_fen("4k3/8/8/8/3pP3/8/8/4K3 b - e3 0 1").unwrap();
         let ok = game.make_move(Move {
             piece: black(PieceType::Pawn),
             from: Square::D4,
@@ -1567,7 +1598,7 @@ mod tests {
 
     #[test]
     fn make_move_single_push_clears_en_passant() {
-        let mut game = Game::new_game_from_fen("4k3/8/8/8/8/8/4P3/4K3 w KQkq e6 0 1");
+        let mut game = Game::new_game_from_fen("4k3/8/8/8/8/8/4P3/4K3 w KQkq e6 0 1").unwrap();
         game.make_move(Move {
             piece: white(PieceType::Pawn),
             from: Square::E2,
@@ -1578,7 +1609,7 @@ mod tests {
 
     #[test]
     fn make_move_king_move_revokes_both_castle_rights() {
-        let mut game = Game::new_game_from_fen("4k3/8/8/8/8/8/8/4K2R w KQ - 0 1");
+        let mut game = Game::new_game_from_fen("4k3/8/8/8/8/8/8/4K2R w KQ - 0 1").unwrap();
         game.make_move(Move {
             piece: white(PieceType::King),
             from: Square::E1,
@@ -1590,7 +1621,7 @@ mod tests {
 
     #[test]
     fn make_move_rook_move_revokes_that_side_castle_right() {
-        let mut game = Game::new_game_from_fen("4k3/8/8/8/8/8/8/R3K2R w KQ - 0 1");
+        let mut game = Game::new_game_from_fen("4k3/8/8/8/8/8/8/R3K2R w KQ - 0 1").unwrap();
         game.make_move(Move {
             piece: white(PieceType::Rook),
             from: Square::H1,
@@ -1602,7 +1633,7 @@ mod tests {
 
     #[test]
     fn make_move_kingside_castle_moves_rook() {
-        let mut game = Game::new_game_from_fen("4k3/8/8/8/8/8/8/4K2R w K - 0 1");
+        let mut game = Game::new_game_from_fen("4k3/8/8/8/8/8/8/4K2R w K - 0 1").unwrap();
         let ok = game.make_move(Move {
             piece: white(PieceType::King),
             from: Square::E1,
@@ -1622,7 +1653,7 @@ mod tests {
 
     #[test]
     fn make_move_queenside_castle_moves_rook() {
-        let mut game = Game::new_game_from_fen("4k3/8/8/8/8/8/8/R3K3 w Q - 0 1");
+        let mut game = Game::new_game_from_fen("4k3/8/8/8/8/8/8/R3K3 w Q - 0 1").unwrap();
         let ok = game.make_move(Move {
             piece: white(PieceType::King),
             from: Square::E1,
@@ -1642,7 +1673,7 @@ mod tests {
 
     #[test]
     fn make_move_black_kingside_castle_moves_rook() {
-        let mut game = Game::new_game_from_fen("4k2r/8/8/8/8/8/8/4K3 b k - 0 1");
+        let mut game = Game::new_game_from_fen("4k2r/8/8/8/8/8/8/4K3 b k - 0 1").unwrap();
         let ok = game.make_move(Move {
             piece: black(PieceType::King),
             from: Square::E8,
@@ -1662,7 +1693,7 @@ mod tests {
 
     #[test]
     fn white_pawn_promotes_to_queen_on_eighth_rank() {
-        let mut game = Game::new_game_from_fen("4k3/P7/8/8/8/8/8/4K3 w - - 0 1");
+        let mut game = Game::new_game_from_fen("4k3/P7/8/8/8/8/8/4K3 w - - 0 1").unwrap();
         let ok = game.make_move(Move {
             piece: white(PieceType::Pawn),
             from: Square::A7,
@@ -1678,7 +1709,7 @@ mod tests {
 
     #[test]
     fn black_pawn_promotes_to_queen_on_first_rank() {
-        let mut game = Game::new_game_from_fen("4k3/8/8/8/8/8/p7/4K3 b - - 0 1");
+        let mut game = Game::new_game_from_fen("4k3/8/8/8/8/8/p7/4K3 b - - 0 1").unwrap();
         let ok = game.make_move(Move {
             piece: black(PieceType::Pawn),
             from: Square::A2,
@@ -1698,7 +1729,7 @@ mod tests {
     #[test]
     fn is_move_legal_rejects_move_leaving_king_in_check() {
         // Pawn e2 pinned by rook e8; stepping off the pin ray exposes the king.
-        let game = Game::new_game_from_fen("4r3/8/8/8/8/8/4P3/4K3 w - - 0 1");
+        let game = Game::new_game_from_fen("4r3/8/8/8/8/8/4P3/4K3 w - - 0 1").unwrap();
         assert!(!game.is_move_legal(Move {
             piece: white(PieceType::Pawn),
             from: Square::E2,
@@ -1708,7 +1739,7 @@ mod tests {
 
     #[test]
     fn is_move_legal_allows_move_along_pin_ray() {
-        let game = Game::new_game_from_fen("4r3/8/8/8/8/8/4P3/4K3 w - - 0 1");
+        let game = Game::new_game_from_fen("4r3/8/8/8/8/8/4P3/4K3 w - - 0 1").unwrap();
         assert!(game.is_move_legal(Move {
             piece: white(PieceType::Pawn),
             from: Square::E2,
@@ -1718,7 +1749,7 @@ mod tests {
 
     #[test]
     fn is_move_legal_rejects_wrong_side() {
-        let game = Game::new_game_from_fen("4k3/4p3/8/8/8/8/8/4K3 w - - 0 1");
+        let game = Game::new_game_from_fen("4k3/4p3/8/8/8/8/8/4K3 w - - 0 1").unwrap();
         assert!(!game.is_move_legal(Move {
             piece: black(PieceType::Pawn),
             from: Square::E7,
@@ -1729,13 +1760,13 @@ mod tests {
     #[test]
     fn is_square_under_attack_true_for_attacked_square() {
         // Black rook on e8 attacks the whole e-file; side to move is White.
-        let game = Game::new_game_from_fen("4r3/8/8/8/8/8/8/4K3 w - - 0 1");
+        let game = Game::new_game_from_fen("4r3/8/8/8/8/8/8/4K3 w - - 0 1").unwrap();
         assert!(game.is_square_under_attack(Square::E4));
     }
 
     #[test]
     fn is_square_under_attack_false_for_safe_square() {
-        let game = Game::new_game_from_fen("4r3/8/8/8/8/8/8/4K3 w - - 0 1");
+        let game = Game::new_game_from_fen("4r3/8/8/8/8/8/8/4K3 w - - 0 1").unwrap();
         assert!(!game.is_square_under_attack(Square::A4));
     }
 }

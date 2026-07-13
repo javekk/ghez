@@ -67,6 +67,17 @@ pub enum Square {
     H8,
 }
 
+impl std::fmt::Display for Square {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}{}",
+            (b'a' + self.file() as u8) as char,
+            self.rank() + 1
+        )
+    }
+}
+
 impl std::str::FromStr for Square {
     type Err = ();
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -135,7 +146,7 @@ impl std::str::FromStr for Square {
             "F8" => Ok(Square::F8),
             "G8" => Ok(Square::G8),
             "H8" => Ok(Square::H8),
-            _ => panic!("Invalid en passant square"),
+            _ => Err(()),
         }
     }
 }
@@ -225,6 +236,25 @@ pub struct Piece {
     pub kind: PieceType,
 }
 
+impl Piece {
+    pub fn to_string(&self) -> &str {
+        match (self.side, self.kind) {
+            (Side::White, PieceType::Pawn) => "P",
+            (Side::White, PieceType::Knight) => "N",
+            (Side::White, PieceType::Bishop) => "B",
+            (Side::White, PieceType::Rook) => "R",
+            (Side::White, PieceType::Queen) => "Q",
+            (Side::White, PieceType::King) => "K",
+            (Side::Black, PieceType::Pawn) => "p",
+            (Side::Black, PieceType::Knight) => "n",
+            (Side::Black, PieceType::Bishop) => "b",
+            (Side::Black, PieceType::Rook) => "r",
+            (Side::Black, PieceType::Queen) => "q",
+            (Side::Black, PieceType::King) => "k",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Move {
     pub piece: Piece,
@@ -259,6 +289,7 @@ impl Move {
 pub const INITIAL_POSITION: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1 ";
 pub const KIWIPETE: &str = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1";
 pub const EASY_POSITION: &str = "8/8/8/8/8/5k2/4p3/4K3 b - - 0 1";
+pub const EMPTY_BOARD: &str = "8/8/8/8/8/8/8/8 w - - 0 1";
 
 #[cfg(test)]
 mod tests {
