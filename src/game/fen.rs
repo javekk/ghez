@@ -1,6 +1,5 @@
-use crate::game;
 use crate::game::domain::{Board, Piece, PieceType, Side, Square};
-use crate::game::game_state::{self, CastleRights, GameState};
+use crate::game::game_state::{CastleRights, GameState};
 
 /// Parse a FEN string into a [`GameState`].
 ///

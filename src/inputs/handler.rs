@@ -8,7 +8,7 @@ use macroquad::{
 
 use crate::{
     game::{
-        domain::{Piece, Side, Square},
+        domain::{Piece, Square},
         game::Game,
     },
     render::theme,
@@ -55,7 +55,7 @@ impl InputHandler {
         Self::mouse_world().x > theme::VIRTUAL_H
     }
 
-    fn on_shell(&mut self, game: &Game) -> InputStatus {
+    fn on_shell(&mut self, _game: &Game) -> InputStatus {
         if is_mouse_button_pressed(MouseButton::Left)
             && theme::new_game_button().contains(Self::mouse_world())
         {

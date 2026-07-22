@@ -1,4 +1,4 @@
-use crate::game::domain::{Board, Piece, Side, Square};
+use crate::game::domain::{Piece, Side, Square};
 use crate::game::game::Game;
 use crate::game::game_state::{DrawReason, GameState, GameStatus};
 use crate::inputs;
@@ -217,7 +217,7 @@ impl Renderer {
         }
     }
 
-    fn draw_shell(&self, game: &Game, input_status: &InputStatus) {
+    fn draw_shell(&self, _game: &Game, input_status: &InputStatus) {
         Self::draw_new_game_button(input_status);
     }
 
@@ -252,8 +252,8 @@ impl Renderer {
                 };
                 println!("{} has won the game!", winner);
             }
-            GameStatus::LostOnTime(side) => todo!(),
-            GameStatus::RunAway(side) => todo!(),
+            GameStatus::LostOnTime(_side) => todo!(),
+            GameStatus::RunAway(_side) => todo!(),
         }
 
         next_frame().await
