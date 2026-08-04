@@ -238,8 +238,12 @@ impl Renderer {
                     DrawReason::Stalemate => {
                         println!("Stalemate")
                     }
-                    DrawReason::FiftyMoveRule => todo!(),
-                    DrawReason::ThreefoldRepetition => todo!(),
+                    DrawReason::FiftyMoveRule => {
+                        println!("FiftyMoveRule")
+                    }
+                    DrawReason::ThreefoldRepetition => {
+                        println!("ThreefoldRepetition")
+                    }
                     DrawReason::InsufficientMaterial => todo!(),
                     DrawReason::Agreement => todo!(),
                 }

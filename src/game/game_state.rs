@@ -1,5 +1,5 @@
 use crate::game::domain::{
-    Board, Piece,
+    Board, CastleRights, Piece,
     Side::{self},
     Square,
 };
@@ -19,20 +19,6 @@ pub enum GameStatus {
     Mated(Side),      //  which side has lost
     LostOnTime(Side), //  which side has lost
     RunAway(Side),    //  which side has given up
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
-pub struct CastleRights {
-    pub white_kingside: bool,
-    pub white_queenside: bool,
-    pub black_kingside: bool,
-    pub black_queenside: bool,
-}
-
-impl CastleRights {
-    pub fn is_castle_still_available(&self) -> bool {
-        self.white_kingside || self.white_queenside || self.black_kingside || self.black_queenside
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -62,6 +48,15 @@ impl GameState {
             halfmove_counter: 0,
             fullmove_number: 1,
         }
+    }
+
+    pub fn get_repetion_key(&self) -> (Board, Side, Option<Square>, CastleRights) {
+        (
+            self.board,
+            self.side,
+            self.en_passant,
+            self.available_castle,
+        )
     }
 
     pub fn get_piece(&self, square: Square) -> Option<Piece> {

@@ -286,6 +286,36 @@ impl Move {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
+pub struct CastleRights {
+    pub white_kingside: bool,
+    pub white_queenside: bool,
+    pub black_kingside: bool,
+    pub black_queenside: bool,
+}
+
+impl CastleRights {
+    pub fn is_castle_still_available(&self) -> bool {
+        self.white_kingside || self.white_queenside || self.black_kingside || self.black_queenside
+    }
+}
+
+/// A record of a move as it was actually played: the move itself, what it
+/// captured or triggered, and the state fields it overwrote (needed to
+/// undo it later).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct MoveLog {
+    pub mv: Move,
+    pub captured_piece: Option<Piece>,
+    pub is_en_passant: bool,
+    pub is_castle: bool,
+    pub promoted_to: Option<PieceType>,
+
+    pub halfmove_counter_before: i16,
+    pub available_castle_before: CastleRights,
+    pub en_passant_before: Option<Square>,
+}
+
 pub const INITIAL_POSITION: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1 ";
 pub const KIWIPETE: &str = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1";
 pub const EASY_POSITION: &str = "8/8/8/8/8/5k2/4p3/4K3 b - - 0 1";
