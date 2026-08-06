@@ -5,6 +5,7 @@ mod render {
 
 mod game {
     pub mod domain;
+    pub mod draw_checker;
     pub mod fen;
     pub mod game;
     pub mod game_state;

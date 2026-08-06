@@ -244,7 +244,9 @@ impl Renderer {
                     DrawReason::ThreefoldRepetition => {
                         println!("ThreefoldRepetition")
                     }
-                    DrawReason::InsufficientMaterial => todo!(),
+                    DrawReason::InsufficientMaterial => {
+                        println!("InsufficientMaterial")
+                    }
                     DrawReason::Agreement => todo!(),
                 }
             }

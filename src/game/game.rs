@@ -1,7 +1,8 @@
-use macroquad::input::KeyCode::H;
-
 use crate::game::domain::{self, CastleRights, Move, MoveLog, Piece, PieceType, Side, Square};
-use crate::game::game_state::DrawReason::{FiftyMoveRule, Stalemate, ThreefoldRepetition};
+use crate::game::draw_checker::DrawChecker;
+use crate::game::game_state::DrawReason::{
+    self, FiftyMoveRule, InsufficientMaterial, Stalemate, ThreefoldRepetition,
+};
 use crate::game::game_state::{GameState, GameStatus};
 use crate::game::{fen, movegen};
 use crate::inputs::handler::InputStatus;
@@ -89,40 +90,19 @@ impl Game {
         movegen::is_move_legal(&self.game_state, mv)
     }
 
-    fn is_threefold_repetition(&self) -> bool {
-        let current_key = self.game_state.get_repetion_key();
-        let position_count = self
-            .game_history
-            .iter()
-            .filter(|&game_state| game_state.get_repetion_key() == current_key)
-            .count();
-
-        println!("Position reached {} times", position_count);
-
-        position_count >= 3
-    }
-
     pub fn parse_game_status(&self) -> GameStatus {
         if movegen::is_mate(&self.game_state) {
             return GameStatus::Mated(self.game_state.side);
         }
 
-        if movegen::is_stalemate(&self.game_state) {
-            return GameStatus::Draw(Stalemate);
-        }
-
-        if self.game_state.halfmove_counter >= 100 {
-            return GameStatus::Draw(FiftyMoveRule);
-        }
-
-        if self.is_threefold_repetition() {
-            return GameStatus::Draw(ThreefoldRepetition);
+        if let Some(draw_reason) = DrawChecker::draw_reason(self) {
+            return GameStatus::Draw(draw_reason);
         }
 
         return GameStatus::Chilling;
     }
 
-    fn make_move(&mut self, mv: Move) -> bool {
+    pub fn make_move(&mut self, mv: Move) -> bool {
         if !self.get_legal_moves(mv.piece, mv.from).contains(&mv.to) {
             return false;
         }
@@ -1808,123 +1788,6 @@ mod tests {
     fn is_square_under_attack_false_for_safe_square() {
         let game = Game::new_game_from_fen("4r3/8/8/8/8/8/8/4K3 w - - 0 1").unwrap();
         assert!(!game.is_square_under_attack(Square::A4));
-    }
-
-    // endregion
-
-    // region: is_threefold_repetition
-
-    fn shuffle_knights_back_and_forth(game: &mut Game) {
-        // Ng1-f3, Ng8-f6, Nf3-g1, Nf6-g8: one full round trip back to the start.
-        game.make_move(Move {
-            piece: white(PieceType::Knight),
-            from: Square::G1,
-            to: Square::F3,
-        });
-        game.make_move(Move {
-            piece: black(PieceType::Knight),
-            from: Square::G8,
-            to: Square::F6,
-        });
-        game.make_move(Move {
-            piece: white(PieceType::Knight),
-            from: Square::F3,
-            to: Square::G1,
-        });
-        game.make_move(Move {
-            piece: black(PieceType::Knight),
-            from: Square::F6,
-            to: Square::G8,
-        });
-    }
-
-    #[test]
-    fn is_threefold_repetition_false_for_starting_position_only() {
-        let game = Game::new_game_from_initial_position();
-        assert!(!game.is_threefold_repetition());
-    }
-
-    #[test]
-    fn is_threefold_repetition_false_after_two_occurrences() {
-        let mut game = Game::new_game_from_initial_position();
-        shuffle_knights_back_and_forth(&mut game);
-        // Starting position has now occurred twice (initial + after the round trip).
-        assert!(!game.is_threefold_repetition());
-    }
-
-    #[test]
-    fn is_threefold_repetition_true_after_three_occurrences() {
-        let mut game = Game::new_game_from_initial_position();
-        shuffle_knights_back_and_forth(&mut game);
-        shuffle_knights_back_and_forth(&mut game);
-        // Starting position has now occurred three times.
-        assert!(game.is_threefold_repetition());
-    }
-
-    #[test]
-    fn is_threefold_repetition_ignores_move_counters() {
-        // Same board/side/castle/en-passant as the start, but reached via captures
-        // that reset halfmove_counter and via extra fullmoves: the position still
-        // must count as a repeat of the initial position for repetition purposes.
-        let mut game = Game::new_game_from_initial_position();
-        let initial_key = game.game_state.get_repetion_key();
-
-        shuffle_knights_back_and_forth(&mut game);
-        assert_ne!(
-            game.game_state.halfmove_counter, 0,
-            "sanity: halfmove_counter should have advanced"
-        );
-        assert_eq!(game.game_state.get_repetion_key(), initial_key);
-    }
-
-    #[test]
-    fn is_threefold_repetition_false_when_castle_rights_differ() {
-        // Same piece placement/side/en-passant as after a rook shuffles home,
-        // but castling rights differ because the rook moved away and back.
-        let mut game = Game::new_game_from_fen(
-            "r3k3/8/8/8/8/8/8/R3K3 w Qq - 0 1",
-        )
-        .unwrap();
-
-        // Move the white rook away and back: board is restored, but the
-        // kingside/queenside rights lost along the way never come back.
-        game.make_move(Move {
-            piece: white(PieceType::Rook),
-            from: Square::A1,
-            to: Square::B1,
-        });
-        game.make_move(Move {
-            piece: black(PieceType::King),
-            from: Square::E8,
-            to: Square::D8,
-        });
-        game.make_move(Move {
-            piece: white(PieceType::Rook),
-            from: Square::B1,
-            to: Square::A1,
-        });
-        game.make_move(Move {
-            piece: black(PieceType::King),
-            from: Square::D8,
-            to: Square::E8,
-        });
-
-        // Board is back to the start, but White's queenside right and Black's
-        // queenside right were forfeited by the king/rook moves above.
-        assert!(!game.is_threefold_repetition());
-    }
-
-    #[test]
-    fn is_threefold_repetition_false_when_en_passant_availability_differs() {
-        // Two positions with identical board/side/castle rights, but one has
-        // an en-passant target and the other doesn't: must not be treated as equal.
-        let with_ep = Game::new_game_from_fen("4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 1").unwrap();
-        let without_ep = Game::new_game_from_fen("4k3/8/8/3pP3/8/8/8/4K3 w - - 0 1").unwrap();
-
-        assert_ne!(
-            with_ep.game_state.get_repetion_key(),
-            without_ep.game_state.get_repetion_key()
-        );
     }
 
     // endregion
