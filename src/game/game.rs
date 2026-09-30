@@ -60,10 +60,10 @@ impl Game {
         match input_status {
             InputStatus::Chilling => {}
             InputStatus::Dragging(drag) => {
-                println!(
-                    "Dragging {:?} from {:?}, now on: {:?}",
-                    drag.piece, drag.from, drag.mouse_pos
-                );
+                //println!(
+                //    "Dragging {:?} from {:?}, now on: {:?}",
+                //    drag.piece, drag.from, drag.mouse_pos
+                //);
             }
             InputStatus::Releasing(drag, Some(square)) if drag.from != *square => {
                 let mv = Move {
@@ -132,6 +132,7 @@ impl Game {
                     eprintln!("Illegal move {from}{to}");
                 }
             }
+            Ok(Command::Exit) => {} // handled by the main loop
             Err(e) => eprintln!("{e}"),
         }
     }

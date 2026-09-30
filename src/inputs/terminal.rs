@@ -1,5 +1,7 @@
-use std::io::BufRead;
 use std::sync::mpsc::{self, Receiver};
+
+use rustyline::DefaultEditor;
+use rustyline::error::ReadlineError;
 
 use crate::game::domain::{PieceType, Square};
 
@@ -7,9 +9,10 @@ use crate::game::domain::{PieceType, Square};
 pub enum Command {
     NewGame(Option<String>),                 // None for the initial position
     Move(Square, Square, Option<PieceType>), // optional promotion piece
+    Exit,
 }
 
-/// Parses one terminal line: "ng", "ng <fen>", "mv e2e4" or "mv e7e8q".
+/// Parses one terminal line: "ng", "ng <fen>", "mv e2e4", "mv e7e8q" or "exit".
 pub fn parse_command(line: &str) -> Result<Command, String> {
     let line = line.trim();
     let (name, rest) = line.split_once(char::is_whitespace).unwrap_or((line, ""));
@@ -19,9 +22,10 @@ pub fn parse_command(line: &str) -> Result<Command, String> {
         "ng" if rest.is_empty() => Ok(Command::NewGame(None)),
         "ng" => Ok(Command::NewGame(Some(rest.to_string()))),
         "mv" => parse_move(rest),
+        "exit" | "quit" if rest.is_empty() => Ok(Command::Exit),
         "" => Err("empty command".to_string()),
         _ => Err(format!(
-            "unknown command '{name}' (try: ng, ng <fen>, mv e2e4, mv e7e8q)"
+            "unknown command '{name}' (try: ng, ng <fen>, mv e2e4, mv e7e8q, exit)"
         )),
     }
 }
@@ -55,7 +59,8 @@ fn parse_move(text: &str) -> Result<Command, String> {
     Ok(Command::Move(from, to, promotion))
 }
 
-/// Reads stdin on a background thread so the render loop never blocks.
+/// Reads commands on a background thread so the render loop never blocks.
+/// Uses a line editor, so up/down recall history and left/right edit the line.
 pub struct Terminal {
     lines: Receiver<String>,
 }
@@ -64,9 +69,29 @@ impl Terminal {
     pub fn new() -> Self {
         let (tx, lines) = mpsc::channel();
         std::thread::spawn(move || {
-            for line in std::io::stdin().lock().lines().map_while(Result::ok) {
-                if tx.send(line).is_err() {
-                    break;
+            let mut editor = match DefaultEditor::new() {
+                Ok(editor) => editor,
+                Err(e) => {
+                    eprintln!("Terminal input unavailable: {e}");
+                    return;
+                }
+            };
+            loop {
+                match editor.readline("> ") {
+                    Ok(line) => {
+                        if !line.trim().is_empty() {
+                            let _ = editor.add_history_entry(line.as_str());
+                        }
+                        if tx.send(line).is_err() {
+                            break;
+                        }
+                    }
+                    // Ctrl-C / Ctrl-D ask the app to quit, like the "exit" command.
+                    Err(ReadlineError::Interrupted | ReadlineError::Eof) => {
+                        let _ = tx.send("exit".to_string());
+                        break;
+                    }
+                    Err(_) => break,
                 }
             }
         });
@@ -106,6 +131,13 @@ mod tests {
                 Some(PieceType::Knight)
             ))
         );
+    }
+
+    #[test]
+    fn parses_exit() {
+        assert_eq!(parse_command("exit"), Ok(Command::Exit));
+        assert_eq!(parse_command("quit"), Ok(Command::Exit));
+        assert!(parse_command("exit now").is_err());
     }
 
     #[test]
