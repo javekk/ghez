@@ -75,6 +75,18 @@ pub fn dialog_cancel_button() -> Rect {
     )
 }
 
+/// Cancel button of the promotion dialog, on the title row so it never
+/// overlaps the piece choices.
+pub fn promotion_cancel_button() -> Rect {
+    let d = dialog_rect();
+    Rect::new(
+        d.right() - SHELL_PAD - BUTTON_W,
+        d.y + SHELL_PAD,
+        BUTTON_W,
+        BUTTON_H,
+    )
+}
+
 /// Clickable piece choices of the promotion dialog, left to right.
 pub fn promotion_choices() -> [(PieceType, Rect); 4] {
     let d = dialog_rect();

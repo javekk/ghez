@@ -295,7 +295,7 @@ impl Renderer {
                 self.get_piece_texture(Piece { side, kind }),
             );
         }
-        Self::draw_button("Cancel", theme::dialog_cancel_button(), input_status);
+        Self::draw_button("Cancel", theme::promotion_cancel_button(), input_status);
     }
 
     pub async fn run(&self, game: &Game, input_status: &InputStatus, dialog: Option<&Dialog>) {

@@ -114,7 +114,7 @@ impl InputHandler {
             {
                 return InputStatus::Promoting(Some(kind));
             }
-            if theme::dialog_cancel_button().contains(mouse) {
+            if theme::promotion_cancel_button().contains(mouse) {
                 return InputStatus::Promoting(None);
             }
         }
