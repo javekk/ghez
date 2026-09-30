@@ -1,5 +1,7 @@
-use std::io::BufRead;
 use std::sync::mpsc::{self, Receiver};
+
+use rustyline::DefaultEditor;
+use rustyline::error::ReadlineError;
 
 use crate::game::domain::{PieceType, Square};
 
@@ -55,7 +57,8 @@ fn parse_move(text: &str) -> Result<Command, String> {
     Ok(Command::Move(from, to, promotion))
 }
 
-/// Reads stdin on a background thread so the render loop never blocks.
+/// Reads commands on a background thread so the render loop never blocks.
+/// Uses a line editor, so up/down recall history and left/right edit the line.
 pub struct Terminal {
     lines: Receiver<String>,
 }
@@ -64,9 +67,25 @@ impl Terminal {
     pub fn new() -> Self {
         let (tx, lines) = mpsc::channel();
         std::thread::spawn(move || {
-            for line in std::io::stdin().lock().lines().map_while(Result::ok) {
-                if tx.send(line).is_err() {
-                    break;
+            let mut editor = match DefaultEditor::new() {
+                Ok(editor) => editor,
+                Err(e) => {
+                    eprintln!("Terminal input unavailable: {e}");
+                    return;
+                }
+            };
+            loop {
+                match editor.readline("> ") {
+                    Ok(line) => {
+                        if !line.trim().is_empty() {
+                            let _ = editor.add_history_entry(line.as_str());
+                        }
+                        if tx.send(line).is_err() {
+                            break;
+                        }
+                    }
+                    Err(ReadlineError::Interrupted) => continue,
+                    Err(_) => break,
                 }
             }
         });
