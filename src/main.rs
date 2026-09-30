@@ -34,7 +34,7 @@ async fn main() {
     let mut input_handler: InputHandler = InputHandler::new();
 
     let terminal = Terminal::new();
-    println!("Terminal commands: ng | ng <fen> | mv e2e4");
+    println!("Terminal commands: ng | ng <fen> | mv e2e4 | mv e7e8q (q/r/b/n)");
 
     loop {
         for line in terminal.poll() {

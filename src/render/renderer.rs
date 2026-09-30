@@ -261,6 +261,43 @@ impl Renderer {
         Self::draw_button(confirm, theme::dialog_confirm_button(), input_status);
     }
 
+    fn draw_promotion_dialog(&self, side: Side, input_status: &InputStatus) {
+        draw_rectangle(
+            0.,
+            0.,
+            theme::VIRTUAL_W * 4.,
+            theme::VIRTUAL_H * 4.,
+            theme::OVERLAY_COLOR,
+        );
+        let panel = theme::dialog_rect();
+        draw_rectangle(panel.x, panel.y, panel.w, panel.h, theme::DIALOG_COLOR);
+        draw_text(
+            "Promote to (click or press Q, R, B, N)",
+            panel.x + theme::SHELL_PAD,
+            panel.y + 40.,
+            theme::FONT_SIZE as f32,
+            WHITE,
+        );
+
+        let mouse = theme::ui_camera().screen_to_world(mouse_position().into());
+        for (kind, rect) in theme::promotion_choices() {
+            let background = if rect.contains(mouse) {
+                theme::BUTTON_COLOR_HIGHLIGHT
+            } else {
+                theme::BUTTON_COLOR
+            };
+            draw_rectangle(rect.x, rect.y, rect.w, rect.h, background);
+            draw_texture_ex(
+                &self.texture,
+                rect.x,
+                rect.y,
+                WHITE,
+                self.get_piece_texture(Piece { side, kind }),
+            );
+        }
+        Self::draw_button("Cancel", theme::promotion_cancel_button(), input_status);
+    }
+
     pub async fn run(&self, game: &Game, input_status: &InputStatus, dialog: Option<&Dialog>) {
         set_camera(&theme::ui_camera());
 
@@ -270,6 +307,10 @@ impl Renderer {
         self.draw_shell(game, input_status);
         if let Some(dialog) = dialog {
             Self::draw_dialog(dialog, input_status);
+        }
+
+        if let Some(mv) = game.pending_promotion {
+            self.draw_promotion_dialog(mv.piece.side, input_status);
         }
 
         match game.parse_game_status() {
