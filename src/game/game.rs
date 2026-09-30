@@ -295,7 +295,7 @@ mod tests {
 
     #[test]
     fn terminal_commands_move_and_reset() {
-        let mut game = Game::new();
+        let mut game = Game::new_game_from_initial_position();
         game.run_command("mv e2e4");
         assert!(game.get_piece(Square::E4).is_some());
         let before = fen::to_fen(game.game_state);
