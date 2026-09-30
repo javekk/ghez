@@ -49,12 +49,8 @@ impl Game {
         self.game_state.get_piece(square)
     }
 
-    /// True once at least one move has been played, i.e. there is a game to lose.
-    pub fn is_in_progress(&self) -> bool {
-        self.game_history.len() > 1
-    }
-
     pub fn parse_input(&mut self, input_status: &InputStatus) {
+        // TODO add other user actions like reset game or I don't know
         match input_status {
             InputStatus::Chilling => {}
             InputStatus::Dragging(drag) => {
@@ -75,9 +71,8 @@ impl Game {
             InputStatus::FiringNewGame(fen) => {
                 *self = match fen {
                     Some(f) => {
-                        // The FEN dialog validates before firing, this is just a safety net
                         Game::new_game_from_fen(f).unwrap_or_else(|e| {
-                            eprintln!("Invalid FEN: {e}");
+                            eprintln!("Invalid FEN: {e}"); // TODO set a UI status/toast string
                             Game::new_game_from_initial_position()
                         })
                     }

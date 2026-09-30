@@ -13,7 +13,6 @@ mod game {
 }
 
 mod inputs {
-    pub mod dialog;
     pub mod handler;
 }
 

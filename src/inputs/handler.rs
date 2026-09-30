@@ -1,17 +1,18 @@
 use macroquad::{
     input::{
-        MouseButton, is_mouse_button_down, is_mouse_button_pressed, is_mouse_button_released,
-        mouse_position,
+        KeyCode, MouseButton, clear_input_queue, get_char_pressed, is_key_down, is_key_pressed,
+        is_mouse_button_down, is_mouse_button_pressed, is_mouse_button_released, mouse_position,
     },
     math::Vec2,
+    miniquad::window::clipboard_get,
 };
 
 use crate::{
     game::{
         domain::{Piece, Square},
+        fen,
         game::Game,
     },
-    inputs::dialog::{self, Dialog, DialogOutcome, FenInput},
     render::theme,
 };
 
@@ -29,6 +30,11 @@ pub enum InputStatus {
     Dragging(Drag),
     Releasing(Drag, Option<Square>),
     FiringNewGame(Option<String>), // New game from fen or normal game
+}
+
+pub enum Dialog {
+    FenInput { text: String, error: Option<String> },
+    ConfirmNewGame(Option<String>), // FEN to start from, None for the initial position
 }
 
 pub struct InputHandler {
@@ -49,9 +55,8 @@ impl InputHandler {
     }
 
     pub fn poll(&mut self, game: &Game) -> InputStatus {
-        // An open dialog is modal: board and shell ignore input until it closes
         if self.dialog.is_some() {
-            self.on_dialog(game)
+            self.on_dialog()
         } else if Self::is_in_shell() && self.drag.is_none() {
             self.on_shell(game)
         } else {
@@ -67,74 +72,70 @@ impl InputHandler {
         Self::mouse_world().x > theme::VIRTUAL_H
     }
 
-    fn on_shell(&mut self, game: &Game) -> InputStatus {
-        if !is_mouse_button_pressed(MouseButton::Left) {
-            return InputStatus::Chilling;
-        }
-
-        let mouse = Self::mouse_world();
-        if theme::new_game_button().contains(mouse) {
-            return self.request_new_game(game, None);
-        }
-        if theme::from_fen_button().contains(mouse) {
-            self.dialog = Some(Dialog::FenInput(FenInput::new()));
+    fn on_shell(&mut self, _game: &Game) -> InputStatus {
+        if is_mouse_button_pressed(MouseButton::Left) {
+            let mouse = Self::mouse_world();
+            if theme::new_game_button().contains(mouse) {
+                self.dialog = Some(Dialog::ConfirmNewGame(None));
+            } else if theme::from_fen_button().contains(mouse) {
+                clear_input_queue(); // drop keys typed before the dialog opened
+                self.dialog = Some(Dialog::FenInput {
+                    text: String::new(),
+                    error: None,
+                });
+            }
         }
         InputStatus::Chilling
     }
 
-    /// Starts the new game right away, or asks first if there is a game to lose.
-    fn request_new_game(&mut self, game: &Game, fen: Option<String>) -> InputStatus {
-        if game.is_in_progress() {
-            self.dialog = Some(Dialog::ConfirmNewGame(fen));
-            InputStatus::Chilling
-        } else {
-            self.dialog = None;
-            InputStatus::FiringNewGame(fen)
-        }
-    }
-
-    fn on_dialog(&mut self, game: &Game) -> InputStatus {
-        let outcome = match Self::clicked_dialog_button() {
-            DialogOutcome::Pending => dialog::keyboard_outcome(),
-            clicked => clicked,
-        };
-
-        match (self.dialog.take(), outcome) {
-            (_, DialogOutcome::Cancelled) => InputStatus::Chilling,
-            (Some(Dialog::ConfirmNewGame(fen)), DialogOutcome::Confirmed) => {
-                InputStatus::FiringNewGame(fen)
-            }
-            (Some(Dialog::FenInput(mut input)), DialogOutcome::Confirmed) => match input.submit() {
-                Some(fen) => self.request_new_game(game, Some(fen)),
-                None => {
-                    self.dialog = Some(Dialog::FenInput(input));
-                    InputStatus::Chilling
-                }
-            },
-            (Some(Dialog::FenInput(mut input)), DialogOutcome::Pending) => {
-                input.handle_keys();
-                self.dialog = Some(Dialog::FenInput(input));
-                InputStatus::Chilling
-            }
-            (dialog, DialogOutcome::Pending) => {
-                self.dialog = dialog;
-                InputStatus::Chilling
-            }
-            (None, _) => InputStatus::Chilling,
-        }
-    }
-
-    fn clicked_dialog_button() -> DialogOutcome {
-        if !is_mouse_button_pressed(MouseButton::Left) {
-            return DialogOutcome::Pending;
-        }
+    fn on_dialog(&mut self) -> InputStatus {
+        let click = is_mouse_button_pressed(MouseButton::Left);
         let mouse = Self::mouse_world();
-        if theme::dialog_confirm_button().contains(mouse) {
-            DialogOutcome::Confirmed
-        } else if theme::dialog_cancel_button().contains(mouse) {
-            DialogOutcome::Cancelled
+        let confirm = is_key_pressed(KeyCode::Enter)
+            || (click && theme::dialog_confirm_button().contains(mouse));
+        let cancel = is_key_pressed(KeyCode::Escape)
+            || (click && theme::dialog_cancel_button().contains(mouse));
+
+        match self.dialog.take() {
+            _ if cancel => {}
+            Some(Dialog::ConfirmNewGame(fen)) if confirm => {
+                return InputStatus::FiringNewGame(fen);
+            }
+            Some(Dialog::FenInput { mut text, error }) => {
+                Self::edit_text(&mut text);
+                self.dialog = Some(match fen::parse(text.trim()) {
+                    Ok(_) if confirm => Dialog::ConfirmNewGame(Some(text.trim().to_string())),
+                    Err(e) if confirm => Dialog::FenInput {
+                        text,
+                        error: Some(e),
+                    },
+                    _ => Dialog::FenInput { text, error },
+                });
+            }
+            dialog => self.dialog = dialog,
+        }
+        InputStatus::Chilling
+    }
+
+    fn edit_text(text: &mut String) {
+        let shortcut = is_key_down(KeyCode::LeftControl) || is_key_down(KeyCode::LeftSuper);
+        // The char queue is a stack: reverse to keep typing order
+        let mut typed: Vec<char> = std::iter::from_fn(get_char_pressed).collect();
+        typed.reverse();
+
+        if shortcut {
+            if is_key_pressed(KeyCode::V) {
+                text.push_str(clipboard_get().unwrap_or_default().trim());
+            }
         } else {
-            DialogOutcome::Pending
+            text.extend(
+                typed
+                    .into_iter()
+                    .filter(|c| c.is_ascii_graphic() || *c == ' '),
+            );
+        }
+        if is_key_pressed(KeyCode::Backspace) {
+            text.pop();
         }
     }
 
