@@ -33,6 +33,64 @@ pub fn new_game_button() -> Rect {
     Rect::new(VIRTUAL_H + SHELL_PAD, SHELL_PAD, BUTTON_W, BUTTON_H)
 }
 
+pub fn from_fen_button() -> Rect {
+    let above = new_game_button();
+    Rect::new(above.x, above.bottom() + SHELL_PAD, BUTTON_W, BUTTON_H)
+}
+
+// DIALOG
+
+pub const OVERLAY_COLOR: Color = Color::from_rgba(0, 0, 0, 150);
+pub const DIALOG_COLOR: Color = Color::from_rgba(48, 46, 43, 255);
+pub const DIALOG_BORDER_COLOR: Color = BORDER_COLOR;
+pub const TEXT_BOX_COLOR: Color = Color::from_rgba(24, 23, 21, 255);
+pub const HINT_COLOR: Color = GRAY;
+pub const ERROR_COLOR: Color = Color::from_rgba(230, 90, 80, 255);
+pub const SMALL_FONT_SIZE: u32 = 18;
+pub const DIALOG_W: f32 = 640.;
+pub const DIALOG_H: f32 = 230.;
+pub const DIALOG_PAD: f32 = 24.;
+pub const TEXT_BOX_H: f32 = 36.;
+
+pub fn dialog_rect() -> Rect {
+    Rect::new(
+        (VIRTUAL_W - DIALOG_W) / 2.,
+        (VIRTUAL_H - DIALOG_H) / 2.,
+        DIALOG_W,
+        DIALOG_H,
+    )
+}
+
+pub fn dialog_text_box() -> Rect {
+    let dialog = dialog_rect();
+    Rect::new(
+        dialog.x + DIALOG_PAD,
+        dialog.y + DIALOG_PAD + 40.,
+        dialog.w - DIALOG_PAD * 2.,
+        TEXT_BOX_H,
+    )
+}
+
+pub fn dialog_confirm_button() -> Rect {
+    let dialog = dialog_rect();
+    Rect::new(
+        dialog.right() - DIALOG_PAD - BUTTON_W,
+        dialog.bottom() - DIALOG_PAD - BUTTON_H,
+        BUTTON_W,
+        BUTTON_H,
+    )
+}
+
+pub fn dialog_cancel_button() -> Rect {
+    let confirm = dialog_confirm_button();
+    Rect::new(
+        confirm.x - SHELL_PAD - BUTTON_W,
+        confirm.y,
+        BUTTON_W,
+        BUTTON_H,
+    )
+}
+
 // Window
 
 pub const VIRTUAL_H: f32 = (SQUARE_SIZE * 8) as f32;

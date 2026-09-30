@@ -2,6 +2,7 @@ use crate::game::domain::{Piece, Side, Square};
 use crate::game::game::Game;
 use crate::game::game_state::{DrawReason, GameState, GameStatus};
 use crate::inputs;
+use crate::inputs::dialog::Dialog;
 use crate::inputs::handler::InputStatus;
 use crate::render::theme;
 
@@ -217,17 +218,22 @@ impl Renderer {
         }
     }
 
-    fn draw_shell(&self, _game: &Game, input_status: &InputStatus) {
-        Self::draw_new_game_button(input_status);
+    fn draw_shell(&self, _game: &Game, input_status: &InputStatus, dialog: Option<&Dialog>) {
+        let interactive = dialog.is_none() && !matches!(input_status, InputStatus::Dragging(_));
+        Self::draw_button("New Game", theme::new_game_button(), interactive);
+        Self::draw_button("From FEN", theme::from_fen_button(), interactive);
     }
 
-    pub async fn run(&self, game: &Game, input_status: &InputStatus) {
+    pub async fn run(&self, game: &Game, input_status: &InputStatus, dialog: Option<&Dialog>) {
         set_camera(&theme::ui_camera());
 
         clear_background(theme::BORDER_COLOR);
 
         self.draw_board(game, input_status);
-        self.draw_shell(game, input_status);
+        self.draw_shell(game, input_status, dialog);
+        if let Some(dialog) = dialog {
+            Self::draw_dialog(dialog);
+        }
 
         match game.parse_game_status() {
             GameStatus::Chilling => {}
@@ -265,10 +271,10 @@ impl Renderer {
         next_frame().await
     }
 
-    fn draw_button(label: &str, rect: Rect, input_status: &InputStatus) {
+    fn draw_button(label: &str, rect: Rect, interactive: bool) {
         let mouse = theme::ui_camera().screen_to_world(mouse_position().into());
         let hover = rect.contains(mouse);
-        let background = if hover && !matches!(*input_status, InputStatus::Dragging(_)) {
+        let background = if hover && interactive {
             theme::BUTTON_COLOR_HIGHLIGHT
         } else {
             theme::BUTTON_COLOR
@@ -285,7 +291,110 @@ impl Renderer {
         );
     }
 
-    fn draw_new_game_button(input_status: &InputStatus) {
-        Self::draw_button("New Game", theme::new_game_button(), input_status);
+    fn draw_dialog(dialog: &Dialog) {
+        // Dim everything behind the dialog, including any extra window space
+        draw_rectangle(
+            0.,
+            0.,
+            theme::VIRTUAL_W * 4.,
+            theme::VIRTUAL_H * 4.,
+            theme::OVERLAY_COLOR,
+        );
+
+        let panel = theme::dialog_rect();
+        draw_rectangle(panel.x, panel.y, panel.w, panel.h, theme::DIALOG_COLOR);
+        draw_rectangle_lines(
+            panel.x,
+            panel.y,
+            panel.w,
+            panel.h,
+            theme::BORDER as f32,
+            theme::DIALOG_BORDER_COLOR,
+        );
+
+        let text_x = panel.x + theme::DIALOG_PAD;
+        let title_y = panel.y + theme::DIALOG_PAD + theme::FONT_SIZE as f32;
+
+        match dialog {
+            Dialog::ConfirmNewGame(fen) => {
+                draw_text(
+                    "Start a new game?",
+                    text_x,
+                    title_y,
+                    theme::FONT_SIZE as f32,
+                    WHITE,
+                );
+                let from = match fen {
+                    Some(_) => "The new game will start from the given FEN.",
+                    None => "The new game will start from the initial position.",
+                };
+                for (i, line) in ["The current game will be lost.", from].iter().enumerate() {
+                    draw_text(
+                        line,
+                        text_x,
+                        title_y + 40. + i as f32 * 28.,
+                        theme::SMALL_FONT_SIZE as f32,
+                        theme::HINT_COLOR,
+                    );
+                }
+                Self::draw_button("Cancel", theme::dialog_cancel_button(), true);
+                Self::draw_button("New Game", theme::dialog_confirm_button(), true);
+            }
+            Dialog::FenInput(input) => {
+                draw_text(
+                    "New game from FEN",
+                    text_x,
+                    title_y,
+                    theme::FONT_SIZE as f32,
+                    WHITE,
+                );
+                Self::draw_text_box(&input.text);
+
+                let text_box = theme::dialog_text_box();
+                let (message, color) = match &input.error {
+                    Some(error) => (error.as_str(), theme::ERROR_COLOR),
+                    None => (
+                        "Enter: confirm   Esc: cancel   Ctrl+V: paste",
+                        theme::HINT_COLOR,
+                    ),
+                };
+                draw_text(
+                    message,
+                    text_box.x,
+                    text_box.bottom() + 28.,
+                    theme::SMALL_FONT_SIZE as f32,
+                    color,
+                );
+                Self::draw_button("Cancel", theme::dialog_cancel_button(), true);
+                Self::draw_button("OK", theme::dialog_confirm_button(), true);
+            }
+        }
+    }
+
+    fn draw_text_box(text: &str) {
+        let rect = theme::dialog_text_box();
+        let font_size = theme::SMALL_FONT_SIZE as f32;
+        let pad = 8.;
+        draw_rectangle(rect.x, rect.y, rect.w, rect.h, theme::TEXT_BOX_COLOR);
+
+        // Long FENs don't fit: keep the tail visible, where the caret is
+        let max_w = rect.w - pad * 2. - 10.;
+        let mut visible = text;
+        while measure_text(visible, None, font_size as u16, 1.0).width > max_w {
+            let mut chars = visible.chars();
+            chars.next();
+            visible = chars.as_str();
+        }
+
+        let baseline =
+            rect.y + (rect.h + measure_text("Ag", None, font_size as u16, 1.0).offset_y) / 2.;
+        draw_text(visible, rect.x + pad, baseline, font_size, WHITE);
+
+        // Blinking caret
+        if get_time() % 1.0 < 0.5 {
+            let caret_x =
+                rect.x + pad + measure_text(visible, None, font_size as u16, 1.0).width + 2.;
+            draw_line(caret_x, rect.y + 8., caret_x, rect.bottom() - 8., 2., WHITE);
+        }
     }
 }
