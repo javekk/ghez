@@ -9,9 +9,10 @@ use crate::game::domain::{PieceType, Square};
 pub enum Command {
     NewGame(Option<String>),                 // None for the initial position
     Move(Square, Square, Option<PieceType>), // optional promotion piece
+    Exit,
 }
 
-/// Parses one terminal line: "ng", "ng <fen>", "mv e2e4" or "mv e7e8q".
+/// Parses one terminal line: "ng", "ng <fen>", "mv e2e4", "mv e7e8q" or "exit".
 pub fn parse_command(line: &str) -> Result<Command, String> {
     let line = line.trim();
     let (name, rest) = line.split_once(char::is_whitespace).unwrap_or((line, ""));
@@ -21,9 +22,10 @@ pub fn parse_command(line: &str) -> Result<Command, String> {
         "ng" if rest.is_empty() => Ok(Command::NewGame(None)),
         "ng" => Ok(Command::NewGame(Some(rest.to_string()))),
         "mv" => parse_move(rest),
+        "exit" | "quit" if rest.is_empty() => Ok(Command::Exit),
         "" => Err("empty command".to_string()),
         _ => Err(format!(
-            "unknown command '{name}' (try: ng, ng <fen>, mv e2e4, mv e7e8q)"
+            "unknown command '{name}' (try: ng, ng <fen>, mv e2e4, mv e7e8q, exit)"
         )),
     }
 }
@@ -84,7 +86,11 @@ impl Terminal {
                             break;
                         }
                     }
-                    Err(ReadlineError::Interrupted) => continue,
+                    // Ctrl-C / Ctrl-D ask the app to quit, like the "exit" command.
+                    Err(ReadlineError::Interrupted | ReadlineError::Eof) => {
+                        let _ = tx.send("exit".to_string());
+                        break;
+                    }
                     Err(_) => break,
                 }
             }
@@ -125,6 +131,13 @@ mod tests {
                 Some(PieceType::Knight)
             ))
         );
+    }
+
+    #[test]
+    fn parses_exit() {
+        assert_eq!(parse_command("exit"), Ok(Command::Exit));
+        assert_eq!(parse_command("quit"), Ok(Command::Exit));
+        assert!(parse_command("exit now").is_err());
     }
 
     #[test]
