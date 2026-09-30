@@ -33,6 +33,46 @@ pub fn new_game_button() -> Rect {
     Rect::new(VIRTUAL_H + SHELL_PAD, SHELL_PAD, BUTTON_W, BUTTON_H)
 }
 
+pub fn from_fen_button() -> Rect {
+    Rect::new(
+        VIRTUAL_H + SHELL_PAD,
+        SHELL_PAD * 2. + BUTTON_H,
+        BUTTON_W,
+        BUTTON_H,
+    )
+}
+
+// DIALOG
+
+pub const OVERLAY_COLOR: Color = Color::from_rgba(0, 0, 0, 150);
+pub const DIALOG_COLOR: Color = Color::from_rgba(48, 46, 43, 255);
+pub const ERROR_COLOR: Color = Color::from_rgba(230, 90, 80, 255);
+pub const SMALL_FONT_SIZE: u32 = 16;
+
+pub fn dialog_rect() -> Rect {
+    Rect::new((VIRTUAL_W - 760.) / 2., (VIRTUAL_H - 200.) / 2., 760., 200.)
+}
+
+pub fn dialog_confirm_button() -> Rect {
+    let d = dialog_rect();
+    Rect::new(
+        d.right() - SHELL_PAD - BUTTON_W,
+        d.bottom() - SHELL_PAD - BUTTON_H,
+        BUTTON_W,
+        BUTTON_H,
+    )
+}
+
+pub fn dialog_cancel_button() -> Rect {
+    let confirm = dialog_confirm_button();
+    Rect::new(
+        confirm.x - SHELL_PAD - BUTTON_W,
+        confirm.y,
+        BUTTON_W,
+        BUTTON_H,
+    )
+}
+
 // Window
 
 pub const VIRTUAL_H: f32 = (SQUARE_SIZE * 8) as f32;

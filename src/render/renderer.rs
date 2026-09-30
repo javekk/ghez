@@ -2,7 +2,7 @@ use crate::game::domain::{Piece, Side, Square};
 use crate::game::game::Game;
 use crate::game::game_state::{DrawReason, GameState, GameStatus};
 use crate::inputs;
-use crate::inputs::handler::InputStatus;
+use crate::inputs::handler::{Dialog, InputStatus};
 use crate::render::theme;
 
 use macroquad::prelude::*;
@@ -218,16 +218,59 @@ impl Renderer {
     }
 
     fn draw_shell(&self, _game: &Game, input_status: &InputStatus) {
-        Self::draw_new_game_button(input_status);
+        Self::draw_button("New Game", theme::new_game_button(), input_status);
+        Self::draw_button("From FEN", theme::from_fen_button(), input_status);
     }
 
-    pub async fn run(&self, game: &Game, input_status: &InputStatus) {
+    fn draw_dialog(dialog: &Dialog, input_status: &InputStatus) {
+        draw_rectangle(
+            0.,
+            0.,
+            theme::VIRTUAL_W * 4.,
+            theme::VIRTUAL_H * 4.,
+            theme::OVERLAY_COLOR,
+        );
+        let panel = theme::dialog_rect();
+        draw_rectangle(panel.x, panel.y, panel.w, panel.h, theme::DIALOG_COLOR);
+
+        let x = panel.x + theme::SHELL_PAD;
+        let small = theme::SMALL_FONT_SIZE as f32;
+        let (title, confirm) = match dialog {
+            Dialog::ConfirmNewGame(_) => {
+                draw_text(
+                    "The current game will be lost.",
+                    x,
+                    panel.y + 80.,
+                    small,
+                    WHITE,
+                );
+                ("Start a new game?", "Yes")
+            }
+            Dialog::FenInput { text, error } => {
+                // Keep the end of long FENs visible (input is ASCII only)
+                let tail = &text[text.len().saturating_sub(80)..];
+                draw_text(format!("{tail}_"), x, panel.y + 80., small, WHITE);
+                if let Some(error) = error {
+                    draw_text(error, x, panel.y + 110., small, theme::ERROR_COLOR);
+                }
+                ("New game from FEN", "OK")
+            }
+        };
+        draw_text(title, x, panel.y + 40., theme::FONT_SIZE as f32, WHITE);
+        Self::draw_button("Cancel", theme::dialog_cancel_button(), input_status);
+        Self::draw_button(confirm, theme::dialog_confirm_button(), input_status);
+    }
+
+    pub async fn run(&self, game: &Game, input_status: &InputStatus, dialog: Option<&Dialog>) {
         set_camera(&theme::ui_camera());
 
         clear_background(theme::BORDER_COLOR);
 
         self.draw_board(game, input_status);
         self.draw_shell(game, input_status);
+        if let Some(dialog) = dialog {
+            Self::draw_dialog(dialog, input_status);
+        }
 
         match game.parse_game_status() {
             GameStatus::Chilling => {}
@@ -283,9 +326,5 @@ impl Renderer {
             theme::FONT_SIZE as f32,
             WHITE,
         );
-    }
-
-    fn draw_new_game_button(input_status: &InputStatus) {
-        Self::draw_button("New Game", theme::new_game_button(), input_status);
     }
 }

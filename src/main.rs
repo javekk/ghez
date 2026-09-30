@@ -34,6 +34,8 @@ async fn main() {
     loop {
         let user_inputs = input_handler.poll(&game);
         game.parse_input(&user_inputs);
-        renderer.run(&game, &user_inputs).await;
+        renderer
+            .run(&game, &user_inputs, input_handler.dialog())
+            .await;
     }
 }
