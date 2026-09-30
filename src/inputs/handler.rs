@@ -32,6 +32,7 @@ pub enum InputStatus {
     FiringNewGame(Option<String>), // New game from fen or normal game
     Promoting(Option<PieceType>),  // Promotion piece chosen, None if cancelled
     Undo,                          // Take back the last move
+    CloseGameOver,                 // Dismiss the game result dialog
 }
 
 pub enum Dialog {
@@ -60,6 +61,9 @@ impl InputHandler {
         if game.pending_promotion.is_some() {
             self.drag = None;
             Self::on_promotion()
+        } else if game.game_over_dialog {
+            self.drag = None;
+            Self::on_game_over()
         } else if self.dialog.is_some() {
             self.on_dialog()
         } else if self.drag.is_none()
@@ -124,6 +128,31 @@ impl InputHandler {
             }
             if theme::promotion_cancel_button().contains(mouse) {
                 return InputStatus::Promoting(None);
+            }
+        }
+        InputStatus::Chilling
+    }
+
+    fn on_game_over() -> InputStatus {
+        if is_key_pressed(KeyCode::Escape) {
+            return InputStatus::CloseGameOver;
+        }
+        if is_key_pressed(KeyCode::N) {
+            return InputStatus::FiringNewGame(None);
+        }
+        if is_key_pressed(KeyCode::U) || is_key_pressed(KeyCode::Left) {
+            return InputStatus::Undo;
+        }
+        if is_mouse_button_pressed(MouseButton::Left) {
+            let mouse = Self::mouse_world();
+            if theme::game_over_new_game_button().contains(mouse) {
+                return InputStatus::FiringNewGame(None);
+            }
+            if theme::game_over_undo_button().contains(mouse) {
+                return InputStatus::Undo;
+            }
+            if theme::game_over_close_button().contains(mouse) {
+                return InputStatus::CloseGameOver;
             }
         }
         InputStatus::Chilling

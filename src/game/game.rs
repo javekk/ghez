@@ -15,6 +15,8 @@ pub struct Game {
     pub san_history: Vec<String>,
     /// Pawn move waiting for the player to pick the promotion piece.
     pub pending_promotion: Option<Move>,
+    /// The last move ended the game and the result dialog is still showing.
+    pub game_over_dialog: bool,
 }
 
 impl Game {
@@ -28,6 +30,7 @@ impl Game {
             game_history,
             san_history: Vec::new(),
             pending_promotion: None,
+            game_over_dialog: false,
         }
     }
 
@@ -41,6 +44,7 @@ impl Game {
             game_history,
             san_history: Vec::new(),
             pending_promotion: None,
+            game_over_dialog: false,
         })
     }
 
@@ -53,6 +57,7 @@ impl Game {
             game_history,
             san_history: Vec::new(),
             pending_promotion: None,
+            game_over_dialog: false,
         }
     }
 
@@ -87,6 +92,7 @@ impl Game {
                 }
             }
             InputStatus::Promoting(None) => self.pending_promotion = None,
+            InputStatus::CloseGameOver => self.game_over_dialog = false,
             InputStatus::Undo => {
                 self.undo(1);
             }
@@ -168,6 +174,7 @@ impl Game {
     /// Returns how many moves were actually undone.
     pub fn undo(&mut self, count: usize) -> usize {
         self.pending_promotion = None;
+        self.game_over_dialog = false;
         let n = count.min(self.san_history.len());
         self.san_history.truncate(self.san_history.len() - n);
         self.game_history.truncate(self.game_history.len() - n);
@@ -270,6 +277,11 @@ impl Game {
         self.game_history.push(self.game_state.clone());
         self.san_history
             .push(format!("{san}{}", notation::suffix(&self.game_state)));
+
+        if let Some((headline, reason)) = self.parse_game_status().outcome() {
+            println!("Game over: {headline} ({reason})");
+            self.game_over_dialog = true;
+        }
 
         true
     }
@@ -450,6 +462,21 @@ mod tests {
         assert_eq!(fen::to_fen(game.game_state), start);
         assert!(game.san_history.is_empty());
         assert_eq!(game.undo(1), 0);
+    }
+
+    #[test]
+    fn game_over_dialog_opens_on_mate_and_closes_on_undo() {
+        let mut game = Game::new_game_from_initial_position();
+        play(&mut game, &["f2f3", "e7e5", "g2g4"]);
+        assert!(!game.game_over_dialog);
+        play(&mut game, &["d8h4"]);
+        assert!(game.game_over_dialog);
+        assert_eq!(
+            game.parse_game_status().outcome().map(|o| o.1),
+            Some("Checkmate")
+        );
+        game.undo(1);
+        assert!(!game.game_over_dialog);
     }
 
     #[test]

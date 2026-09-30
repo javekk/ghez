@@ -4,6 +4,7 @@ use crate::game::domain::{
     Square,
 };
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DrawReason {
     Stalemate,
     FiftyMoveRule,
@@ -12,6 +13,7 @@ pub enum DrawReason {
     Agreement,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GameStatus {
     Chilling,
     Battling,
@@ -31,6 +33,34 @@ pub struct GameState {
 
     pub halfmove_counter: i16,
     pub fullmove_number: i16,
+}
+
+impl GameStatus {
+    /// Headline and reason of a finished game, `None` while it is still going on.
+    pub fn outcome(&self) -> Option<(String, &'static str)> {
+        let winner = |loser: &Side| match loser {
+            Side::White => "Black",
+            Side::Black => "White",
+        };
+        match self {
+            GameStatus::Chilling | GameStatus::Battling => None,
+            GameStatus::Mated(loser) => Some((format!("{} wins", winner(loser)), "Checkmate")),
+            GameStatus::LostOnTime(loser) => {
+                Some((format!("{} wins", winner(loser)), "Lost on time"))
+            }
+            GameStatus::RunAway(loser) => Some((format!("{} wins", winner(loser)), "Resignation")),
+            GameStatus::Draw(reason) => Some((
+                "Draw".to_string(),
+                match reason {
+                    DrawReason::Stalemate => "Stalemate",
+                    DrawReason::FiftyMoveRule => "Fifty-move rule",
+                    DrawReason::ThreefoldRepetition => "Threefold repetition",
+                    DrawReason::InsufficientMaterial => "Insufficient material",
+                    DrawReason::Agreement => "Agreement",
+                },
+            )),
+        }
+    }
 }
 
 impl GameState {

@@ -111,6 +111,20 @@ pub fn promotion_cancel_button() -> Rect {
     )
 }
 
+/// Buttons of the game over dialog, right-aligned: New game, Undo, Close.
+pub fn game_over_close_button() -> Rect {
+    dialog_confirm_button()
+}
+
+pub fn game_over_undo_button() -> Rect {
+    dialog_cancel_button()
+}
+
+pub fn game_over_new_game_button() -> Rect {
+    let undo = game_over_undo_button();
+    Rect::new(undo.x - SHELL_PAD - BUTTON_W, undo.y, BUTTON_W, BUTTON_H)
+}
+
 /// Clickable piece choices of the promotion dialog, left to right.
 pub fn promotion_choices() -> [(PieceType, Rect); 4] {
     let d = dialog_rect();
