@@ -4,13 +4,15 @@ use crate::game::game_state::DrawReason::{
     self, FiftyMoveRule, InsufficientMaterial, Stalemate, ThreefoldRepetition,
 };
 use crate::game::game_state::{GameState, GameStatus};
-use crate::game::{fen, movegen};
+use crate::game::{fen, movegen, notation};
 use crate::inputs::handler::InputStatus;
 use crate::inputs::terminal::{self, Command};
 
 pub struct Game {
     pub game_state: GameState,
     pub game_history: Vec<GameState>,
+    /// SAN of each played move; `san_history[i]` leads to `game_history[i + 1]`.
+    pub san_history: Vec<String>,
     /// Pawn move waiting for the player to pick the promotion piece.
     pub pending_promotion: Option<Move>,
 }
@@ -24,6 +26,7 @@ impl Game {
         Self {
             game_state,
             game_history,
+            san_history: Vec::new(),
             pending_promotion: None,
         }
     }
@@ -36,6 +39,7 @@ impl Game {
         Ok(Self {
             game_state,
             game_history,
+            san_history: Vec::new(),
             pending_promotion: None,
         })
     }
@@ -47,6 +51,7 @@ impl Game {
         Self {
             game_state,
             game_history,
+            san_history: Vec::new(),
             pending_promotion: None,
         }
     }
@@ -82,6 +87,9 @@ impl Game {
                 }
             }
             InputStatus::Promoting(None) => self.pending_promotion = None,
+            InputStatus::Undo => {
+                self.undo(1);
+            }
             InputStatus::Releasing(..) => {}
             InputStatus::FiringNewGame(fen) => {
                 *self = match fen {
@@ -132,9 +140,46 @@ impl Game {
                     eprintln!("Illegal move {from}{to}");
                 }
             }
+            Ok(Command::Undo(n)) => {
+                let undone = self.undo(n);
+                if undone == 0 {
+                    eprintln!("Nothing to undo");
+                } else {
+                    println!(
+                        "Undid {undone} move(s). FEN: {}",
+                        fen::to_fen(self.game_state)
+                    );
+                }
+            }
+            Ok(Command::History) => {
+                let rows = self.move_rows();
+                if rows.is_empty() {
+                    println!("No moves played yet");
+                } else {
+                    println!("{}", rows.join("\n"));
+                }
+            }
             Ok(Command::Exit) => {} // handled by the main loop
             Err(e) => eprintln!("{e}"),
         }
+    }
+
+    /// Takes back up to `count` moves (and any promotion in progress).
+    /// Returns how many moves were actually undone.
+    pub fn undo(&mut self, count: usize) -> usize {
+        self.pending_promotion = None;
+        let n = count.min(self.san_history.len());
+        self.san_history.truncate(self.san_history.len() - n);
+        self.game_history.truncate(self.game_history.len() - n);
+        if let Some(state) = self.game_history.last() {
+            self.game_state = *state;
+        }
+        n
+    }
+
+    /// Numbered rows of the moves played so far, e.g. "1. e4 e5".
+    pub fn move_rows(&self) -> Vec<String> {
+        notation::rows(&self.game_history[0], &self.san_history)
     }
 
     pub fn get_legal_moves(&self, piece: Piece, from: Square) -> Vec<Square> {
@@ -194,6 +239,7 @@ impl Game {
             return false;
         }
 
+        let san = notation::san_base(&self.game_state, mv, promote_to);
         let captured_piece = self.game_state.get_piece(mv.to);
         let is_en_passant = self.is_en_passant_capture(mv, captured_piece);
 
@@ -222,6 +268,8 @@ impl Game {
 
         // Save previuos game state
         self.game_history.push(self.game_state.clone());
+        self.san_history
+            .push(format!("{san}{}", notation::suffix(&self.game_state)));
 
         true
     }
@@ -344,6 +392,81 @@ fn revoke_right_for_rook_square(rights: &mut CastleRights, side: Side, square: S
 mod tests {
     use super::*;
     use std::collections::HashSet;
+
+    fn play(game: &mut Game, moves: &[&str]) {
+        for m in moves {
+            game.run_command(&format!("mv {m}"));
+        }
+    }
+
+    #[test]
+    fn records_san_history_and_rows() {
+        let mut game = Game::new_game_from_initial_position();
+        play(&mut game, &["e2e4", "e7e5", "g1f3", "b8c6", "f1b5"]);
+        assert_eq!(game.san_history, ["e4", "e5", "Nf3", "Nc6", "Bb5"]);
+        assert_eq!(game.move_rows(), ["1. e4 e5", "2. Nf3 Nc6", "3. Bb5"]);
+    }
+
+    #[test]
+    fn san_handles_captures_castling_promotion_and_mate() {
+        let mut game = Game::new_game_from_initial_position();
+        play(&mut game, &["e2e4", "d7d5", "e4d5"]);
+        assert_eq!(game.san_history[2], "exd5");
+
+        let mut game = Game::new_game_from_fen("r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1").unwrap();
+        play(&mut game, &["e1g1", "e8c8"]);
+        assert_eq!(game.san_history, ["O-O", "O-O-O"]);
+
+        let mut game = Game::new_game_from_fen("8/4P3/8/8/8/8/k7/4K3 w - - 0 1").unwrap();
+        play(&mut game, &["e7e8n"]);
+        assert_eq!(game.san_history, ["e8=N"]);
+
+        let mut game = Game::new_game_from_initial_position();
+        play(&mut game, &["f2f3", "e7e5", "g2g4", "d8h4"]);
+        assert_eq!(game.san_history[3], "Qh4#");
+    }
+
+    #[test]
+    fn san_disambiguates_same_piece_moves() {
+        let mut game = Game::new_game_from_fen("4k3/8/8/8/8/8/1K6/R6R w - - 0 1").unwrap();
+        play(&mut game, &["a1d1"]);
+        assert_eq!(game.san_history, ["Rad1"]);
+    }
+
+    #[test]
+    fn undo_restores_previous_position() {
+        let mut game = Game::new_game_from_initial_position();
+        let start = fen::to_fen(game.game_state);
+        play(&mut game, &["e2e4", "e7e5"]);
+        let after_e4 = {
+            let mut g = Game::new_game_from_initial_position();
+            play(&mut g, &["e2e4"]);
+            fen::to_fen(g.game_state)
+        };
+        assert_eq!(game.undo(1), 1);
+        assert_eq!(fen::to_fen(game.game_state), after_e4);
+        assert_eq!(game.san_history, ["e4"]);
+        game.run_command("undo 5");
+        assert_eq!(fen::to_fen(game.game_state), start);
+        assert!(game.san_history.is_empty());
+        assert_eq!(game.undo(1), 0);
+    }
+
+    #[test]
+    fn undo_cancels_pending_promotion() {
+        let mut game = Game::new_game_from_fen("8/4P3/8/8/8/8/k7/4K3 w - - 0 1").unwrap();
+        game.run_command("mv e7e8");
+        assert!(game.pending_promotion.is_some());
+        game.undo(1);
+        assert!(game.pending_promotion.is_none());
+    }
+
+    #[test]
+    fn rows_start_with_black_to_move() {
+        let mut game = Game::new_game_from_fen("4k3/8/8/8/8/8/8/4K3 b - - 0 7").unwrap();
+        play(&mut game, &["e8e7", "e1e2"]);
+        assert_eq!(game.move_rows(), ["7... Ke7", "8. Ke2"]);
+    }
 
     #[test]
     fn terminal_commands_move_and_reset() {

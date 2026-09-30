@@ -9,6 +9,8 @@ use crate::game::domain::{PieceType, Square};
 pub enum Command {
     NewGame(Option<String>),                 // None for the initial position
     Move(Square, Square, Option<PieceType>), // optional promotion piece
+    Undo(usize),                             // number of moves to take back
+    History,
     Exit,
 }
 
@@ -22,10 +24,24 @@ pub fn parse_command(line: &str) -> Result<Command, String> {
         "ng" if rest.is_empty() => Ok(Command::NewGame(None)),
         "ng" => Ok(Command::NewGame(Some(rest.to_string()))),
         "mv" => parse_move(rest),
+        "undo" => parse_undo(rest),
+        "history" if rest.is_empty() => Ok(Command::History),
         "exit" | "quit" if rest.is_empty() => Ok(Command::Exit),
         "" => Err("empty command".to_string()),
         _ => Err(format!(
-            "unknown command '{name}' (try: ng, ng <fen>, mv e2e4, mv e7e8q, exit)"
+            "unknown command '{name}' (try: ng, ng <fen>, mv e2e4, mv e7e8q, undo [n], history, exit)"
+        )),
+    }
+}
+
+fn parse_undo(text: &str) -> Result<Command, String> {
+    if text.is_empty() {
+        return Ok(Command::Undo(1));
+    }
+    match text.parse::<usize>() {
+        Ok(n) if n > 0 => Ok(Command::Undo(n)),
+        _ => Err(format!(
+            "invalid count '{text}', expected e.g. undo or undo 2"
         )),
     }
 }
@@ -131,6 +147,16 @@ mod tests {
                 Some(PieceType::Knight)
             ))
         );
+    }
+
+    #[test]
+    fn parses_undo_and_history() {
+        assert_eq!(parse_command("undo"), Ok(Command::Undo(1)));
+        assert_eq!(parse_command("undo 3"), Ok(Command::Undo(3)));
+        assert!(parse_command("undo 0").is_err());
+        assert!(parse_command("undo x").is_err());
+        assert_eq!(parse_command("history"), Ok(Command::History));
+        assert!(parse_command("history 2").is_err());
     }
 
     #[test]
