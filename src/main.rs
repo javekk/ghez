@@ -10,6 +10,7 @@ mod game {
     pub mod game;
     pub mod game_state;
     pub mod movegen;
+    pub mod notation;
 }
 
 mod inputs {
@@ -34,7 +35,9 @@ async fn main() {
     let mut input_handler: InputHandler = InputHandler::new();
 
     let terminal = Terminal::new();
-    println!("Terminal commands: ng | ng <fen> | mv e2e4 | mv e7e8q (q/r/b/n) | exit (or Ctrl-C)");
+    println!(
+        "Terminal commands: ng | ng <fen> | mv e2e4 | mv e7e8q (q/r/b/n) | undo [n] | history | exit (or Ctrl-C)"
+    );
 
     loop {
         for line in terminal.poll() {

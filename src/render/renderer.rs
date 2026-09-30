@@ -217,9 +217,28 @@ impl Renderer {
         }
     }
 
-    fn draw_shell(&self, _game: &Game, input_status: &InputStatus) {
+    fn draw_shell(&self, game: &Game, input_status: &InputStatus) {
         Self::draw_button("New Game", theme::new_game_button(), input_status);
         Self::draw_button("From FEN", theme::from_fen_button(), input_status);
+        Self::draw_button("Undo", theme::undo_button(), input_status);
+        Self::draw_move_list(game);
+    }
+
+    /// Latest rows of the move list, scrolled so the last move stays visible.
+    fn draw_move_list(game: &Game) {
+        let area = theme::move_list_rect();
+        let rows = game.move_rows();
+        let visible = (area.h / theme::MOVE_ROW_H) as usize;
+        let skip = rows.len().saturating_sub(visible);
+        for (i, row) in rows.iter().skip(skip).enumerate() {
+            draw_text(
+                row,
+                area.x,
+                area.y + (i as f32 + 1.) * theme::MOVE_ROW_H - 6.,
+                theme::SMALL_FONT_SIZE as f32 * 1.25,
+                WHITE,
+            );
+        }
     }
 
     fn draw_dialog(dialog: &Dialog, input_status: &InputStatus) {

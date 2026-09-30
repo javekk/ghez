@@ -29,7 +29,7 @@ pub const BUTTON_W: f32 = 130.;
 pub const BUTTON_H: f32 = 32.;
 pub const SHELL_PAD: f32 = 16.;
 
-pub const SHELL_W: f32 = BUTTON_W + SHELL_PAD * 2.;
+pub const SHELL_W: f32 = 240.;
 
 pub fn new_game_button() -> Rect {
     Rect::new(VIRTUAL_H + SHELL_PAD, SHELL_PAD, BUTTON_W, BUTTON_H)
@@ -41,6 +41,30 @@ pub fn from_fen_button() -> Rect {
         SHELL_PAD * 2. + BUTTON_H,
         BUTTON_W,
         BUTTON_H,
+    )
+}
+
+pub fn undo_button() -> Rect {
+    Rect::new(
+        VIRTUAL_H + SHELL_PAD,
+        SHELL_PAD * 3. + BUTTON_H * 2.,
+        BUTTON_W,
+        BUTTON_H,
+    )
+}
+
+// MOVE LIST
+
+pub const MOVE_ROW_H: f32 = 22.;
+
+/// Area of the shell below the buttons where the move list is drawn.
+pub fn move_list_rect() -> Rect {
+    let top = SHELL_PAD * 4. + BUTTON_H * 3.;
+    Rect::new(
+        VIRTUAL_H + SHELL_PAD,
+        top,
+        SHELL_W - SHELL_PAD * 2.,
+        VIRTUAL_H - top - SHELL_PAD,
     )
 }
 

@@ -79,7 +79,7 @@ fn are_there_any_legal_moves(state: &GameState) -> bool {
         .any(|square| !get_legal_moves(state, state.piece_at(square).unwrap(), square).is_empty())
 }
 
-fn king_is_in_check(state: &GameState) -> bool {
+pub fn king_is_in_check(state: &GameState) -> bool {
     Square::ALL.into_iter().any(|square| {
         state
             .get_piece(square)

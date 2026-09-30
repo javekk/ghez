@@ -31,6 +31,7 @@ pub enum InputStatus {
     Releasing(Drag, Option<Square>),
     FiringNewGame(Option<String>), // New game from fen or normal game
     Promoting(Option<PieceType>),  // Promotion piece chosen, None if cancelled
+    Undo,                          // Take back the last move
 }
 
 pub enum Dialog {
@@ -61,6 +62,10 @@ impl InputHandler {
             Self::on_promotion()
         } else if self.dialog.is_some() {
             self.on_dialog()
+        } else if self.drag.is_none()
+            && (is_key_pressed(KeyCode::U) || is_key_pressed(KeyCode::Left))
+        {
+            InputStatus::Undo
         } else if Self::is_in_shell() && self.drag.is_none() {
             self.on_shell(game)
         } else {
@@ -79,6 +84,9 @@ impl InputHandler {
     fn on_shell(&mut self, _game: &Game) -> InputStatus {
         if is_mouse_button_pressed(MouseButton::Left) {
             let mouse = Self::mouse_world();
+            if theme::undo_button().contains(mouse) {
+                return InputStatus::Undo;
+            }
             if theme::new_game_button().contains(mouse) {
                 self.dialog = Some(Dialog::ConfirmNewGame(None));
             } else if theme::from_fen_button().contains(mouse) {
