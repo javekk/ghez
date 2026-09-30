@@ -6,6 +6,7 @@ use crate::game::game_state::DrawReason::{
 use crate::game::game_state::{GameState, GameStatus};
 use crate::game::{fen, movegen};
 use crate::inputs::handler::InputStatus;
+use crate::inputs::terminal::{self, Command};
 
 pub struct Game {
     pub game_state: GameState,
@@ -79,6 +80,37 @@ impl Game {
                     None => Game::new_game_from_fen(domain::INITIAL_POSITION).unwrap(),
                 };
             }
+        }
+    }
+
+    /// Runs a terminal command line, reporting the outcome on stdout/stderr.
+    pub fn run_command(&mut self, line: &str) {
+        match terminal::parse_command(line) {
+            Ok(Command::NewGame(fen)) => {
+                let new_game = match fen {
+                    Some(f) => Game::new_game_from_fen(&f),
+                    None => Ok(Game::new_game_from_initial_position()),
+                };
+                match new_game {
+                    Ok(g) => {
+                        *self = g;
+                        println!("New game: {}", fen::to_fen(self.game_state));
+                    }
+                    Err(e) => eprintln!("Invalid FEN: {e}"),
+                }
+            }
+            Ok(Command::Move(from, to)) => {
+                let Some(piece) = self.get_piece(from) else {
+                    eprintln!("Illegal move {from}{to}: no piece on {from}");
+                    return;
+                };
+                if self.make_move(Move { piece, from, to }) {
+                    println!("Moved {from}{to}. FEN: {}", fen::to_fen(self.game_state));
+                } else {
+                    eprintln!("Illegal move {from}{to}");
+                }
+            }
+            Err(e) => eprintln!("{e}"),
         }
     }
 
@@ -260,6 +292,19 @@ fn revoke_right_for_rook_square(rights: &mut CastleRights, side: Side, square: S
 mod tests {
     use super::*;
     use std::collections::HashSet;
+
+    #[test]
+    fn terminal_commands_move_and_reset() {
+        let mut game = Game::new_game_from_initial_position();
+        game.run_command("mv e2e4");
+        assert!(game.get_piece(Square::E4).is_some());
+        let before = fen::to_fen(game.game_state);
+        game.run_command("mv e2e5"); // illegal: unchanged
+        game.run_command("mv e7e5e5");
+        assert_eq!(fen::to_fen(game.game_state), before);
+        game.run_command("ng");
+        assert!(game.get_piece(Square::E4).is_none());
+    }
 
     fn moves_set(game: &Game, piece: Piece, sq: Square) -> HashSet<Square> {
         game.get_pseudo_legal_moves(piece, sq).into_iter().collect()

@@ -14,10 +14,12 @@ mod game {
 
 mod inputs {
     pub mod handler;
+    pub mod terminal;
 }
 
 use crate::game::game::Game;
 use crate::inputs::handler::InputHandler;
+use crate::inputs::terminal::Terminal;
 use crate::render::renderer::Renderer;
 
 #[macroquad::main("Ghez")]
@@ -31,7 +33,13 @@ async fn main() {
     let renderer: Renderer = Renderer::new().await;
     let mut input_handler: InputHandler = InputHandler::new();
 
+    let terminal = Terminal::new();
+    println!("Terminal commands: ng | ng <fen> | mv e2e4");
+
     loop {
+        for line in terminal.poll() {
+            game.run_command(&line);
+        }
         let user_inputs = input_handler.poll(&game);
         game.parse_input(&user_inputs);
         renderer
