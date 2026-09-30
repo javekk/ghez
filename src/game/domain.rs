@@ -263,6 +263,14 @@ pub struct Move {
 }
 
 impl Move {
+    pub fn is_promotion(&self) -> bool {
+        self.piece.kind == PieceType::Pawn
+            && matches!(
+                (self.piece.side, self.to.rank()),
+                (Side::White, 7) | (Side::Black, 0)
+            )
+    }
+
     pub fn is_pawn_double_push(&self) -> bool {
         if self.piece.kind == PieceType::Pawn {
             (self.from.rank() - self.to.rank()).abs() == 2

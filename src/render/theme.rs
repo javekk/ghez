@@ -5,6 +5,8 @@ use macroquad::{
     window::{screen_height, screen_width},
 };
 
+use crate::game::domain::PieceType;
+
 pub const PIECE_PIXELS: u32 = 16;
 pub const SCALE: u32 = 6;
 
@@ -71,6 +73,34 @@ pub fn dialog_cancel_button() -> Rect {
         BUTTON_W,
         BUTTON_H,
     )
+}
+
+/// Clickable piece choices of the promotion dialog, left to right.
+pub fn promotion_choices() -> [(PieceType, Rect); 4] {
+    let d = dialog_rect();
+    let size = SQUARE_SIZE as f32;
+    let gap = SHELL_PAD;
+    let total = size * 4. + gap * 3.;
+    let x = d.x + (d.w - total) / 2.;
+    let y = d.y + 60.;
+    [
+        PieceType::Queen,
+        PieceType::Rook,
+        PieceType::Bishop,
+        PieceType::Knight,
+    ]
+    .map(|kind| (kind, Rect::new(0., y, size, size)))
+    .into_iter()
+    .enumerate()
+    .map(|(i, (kind, r))| {
+        (
+            kind,
+            Rect::new(x + i as f32 * (size + gap), r.y, size, size),
+        )
+    })
+    .collect::<Vec<_>>()
+    .try_into()
+    .unwrap()
 }
 
 // Window

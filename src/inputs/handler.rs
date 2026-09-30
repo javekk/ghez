@@ -9,7 +9,7 @@ use macroquad::{
 
 use crate::{
     game::{
-        domain::{Piece, Square},
+        domain::{Piece, PieceType, Square},
         fen,
         game::Game,
     },
@@ -30,6 +30,7 @@ pub enum InputStatus {
     Dragging(Drag),
     Releasing(Drag, Option<Square>),
     FiringNewGame(Option<String>), // New game from fen or normal game
+    Promoting(Option<PieceType>),  // Promotion piece chosen, None if cancelled
 }
 
 pub enum Dialog {
@@ -55,7 +56,10 @@ impl InputHandler {
     }
 
     pub fn poll(&mut self, game: &Game) -> InputStatus {
-        if self.dialog.is_some() {
+        if game.pending_promotion.is_some() {
+            self.drag = None;
+            Self::on_promotion()
+        } else if self.dialog.is_some() {
             self.on_dialog()
         } else if Self::is_in_shell() && self.drag.is_none() {
             self.on_shell(game)
@@ -83,6 +87,35 @@ impl InputHandler {
                     text: String::new(),
                     error: None,
                 });
+            }
+        }
+        InputStatus::Chilling
+    }
+
+    fn on_promotion() -> InputStatus {
+        if is_key_pressed(KeyCode::Escape) {
+            return InputStatus::Promoting(None);
+        }
+        for (key, kind) in [
+            (KeyCode::Q, PieceType::Queen),
+            (KeyCode::R, PieceType::Rook),
+            (KeyCode::B, PieceType::Bishop),
+            (KeyCode::N, PieceType::Knight),
+        ] {
+            if is_key_pressed(key) {
+                return InputStatus::Promoting(Some(kind));
+            }
+        }
+        if is_mouse_button_pressed(MouseButton::Left) {
+            let mouse = Self::mouse_world();
+            if let Some((kind, _)) = theme::promotion_choices()
+                .into_iter()
+                .find(|(_, rect)| rect.contains(mouse))
+            {
+                return InputStatus::Promoting(Some(kind));
+            }
+            if theme::dialog_cancel_button().contains(mouse) {
+                return InputStatus::Promoting(None);
             }
         }
         InputStatus::Chilling

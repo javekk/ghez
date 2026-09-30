@@ -11,6 +11,8 @@ use crate::inputs::terminal::{self, Command};
 pub struct Game {
     pub game_state: GameState,
     pub game_history: Vec<GameState>,
+    /// Pawn move waiting for the player to pick the promotion piece.
+    pub pending_promotion: Option<Move>,
 }
 
 impl Game {
@@ -22,6 +24,7 @@ impl Game {
         Self {
             game_state,
             game_history,
+            pending_promotion: None,
         }
     }
 
@@ -33,6 +36,7 @@ impl Game {
         Ok(Self {
             game_state,
             game_history,
+            pending_promotion: None,
         })
     }
 
@@ -43,6 +47,7 @@ impl Game {
         Self {
             game_state,
             game_history,
+            pending_promotion: None,
         }
     }
 
@@ -61,13 +66,22 @@ impl Game {
                 );
             }
             InputStatus::Releasing(drag, Some(square)) if drag.from != *square => {
-                self.make_move(Move {
+                let mv = Move {
                     piece: drag.piece,
                     from: drag.from,
                     to: *square,
-                });
-                println!("FEN: {:?}", fen::to_fen(self.game_state))
+                };
+                if self.request_move(mv, None) {
+                    println!("FEN: {:?}", fen::to_fen(self.game_state))
+                }
             }
+            InputStatus::Promoting(Some(kind)) => {
+                if let Some(mv) = self.pending_promotion.take() {
+                    self.make_move_promoting(mv, *kind);
+                    println!("FEN: {:?}", fen::to_fen(self.game_state))
+                }
+            }
+            InputStatus::Promoting(None) => self.pending_promotion = None,
             InputStatus::Releasing(..) => {}
             InputStatus::FiringNewGame(fen) => {
                 *self = match fen {
@@ -99,13 +113,21 @@ impl Game {
                     Err(e) => eprintln!("Invalid FEN: {e}"),
                 }
             }
-            Ok(Command::Move(from, to)) => {
+            Ok(Command::Move(from, to, promotion)) => {
                 let Some(piece) = self.get_piece(from) else {
                     eprintln!("Illegal move {from}{to}: no piece on {from}");
                     return;
                 };
-                if self.make_move(Move { piece, from, to }) {
-                    println!("Moved {from}{to}. FEN: {}", fen::to_fen(self.game_state));
+                self.pending_promotion = None;
+                let mv = Move { piece, from, to };
+                if self.request_move(mv, promotion) {
+                    if self.pending_promotion.is_some() {
+                        println!(
+                            "Choose the promotion piece in the dialog (or use e.g. mv {from}{to}q)"
+                        );
+                    } else {
+                        println!("Moved {from}{to}. FEN: {}", fen::to_fen(self.game_state));
+                    }
                 } else {
                     eprintln!("Illegal move {from}{to}");
                 }
@@ -134,7 +156,39 @@ impl Game {
         return GameStatus::Chilling;
     }
 
+    /// Plays `mv`. A promotion without a chosen piece is parked in
+    /// `pending_promotion` until the player picks one. Returns false if the
+    /// move is illegal.
+    fn request_move(&mut self, mv: Move, promotion: Option<PieceType>) -> bool {
+        if !mv.is_promotion() {
+            return self.make_move(mv);
+        }
+        if !self.get_legal_moves(mv.piece, mv.from).contains(&mv.to) {
+            return false;
+        }
+        match promotion {
+            Some(kind) => self.make_move_promoting(mv, kind),
+            None => {
+                self.pending_promotion = Some(mv);
+                true
+            }
+        }
+    }
+
+    /// Plays `mv`, promoting to a queen if it is a promotion.
     pub fn make_move(&mut self, mv: Move) -> bool {
+        self.make_move_promoting(mv, PieceType::Queen)
+    }
+
+    pub fn make_move_promoting(&mut self, mv: Move, promote_to: PieceType) -> bool {
+        if mv.is_promotion()
+            && !matches!(
+                promote_to,
+                PieceType::Queen | PieceType::Rook | PieceType::Bishop | PieceType::Knight
+            )
+        {
+            return false;
+        }
         if !self.get_legal_moves(mv.piece, mv.from).contains(&mv.to) {
             return false;
         }
@@ -151,9 +205,7 @@ impl Game {
         self.update_castle_rights(mv, captured_piece);
         self.relocate_rook_on_castle(mv);
 
-        // TODO make the user or engine decide which piece wants in return
-        let promoted_piece = Some(PieceType::Queen);
-        self.make_pawn_promotion(mv, promoted_piece);
+        self.make_pawn_promotion(mv, promote_to);
 
         self.game_state.side = self.game_state.side.opponent();
 
@@ -239,8 +291,7 @@ impl Game {
         debug_assert!(self.game_state.move_piece(rook_from, rook_to));
     }
 
-    fn make_pawn_promotion(&mut self, mv: Move, piece_type: Option<PieceType>) {
-        let promote_to = piece_type.unwrap_or(PieceType::Queen);
+    fn make_pawn_promotion(&mut self, mv: Move, promote_to: PieceType) {
         if mv.piece.kind == PieceType::Pawn {
             match (mv.piece.side, mv.to.rank()) {
                 (Side::White, 7) => self.game_state.set_piece(
@@ -1784,6 +1835,61 @@ mod tests {
         assert_eq!(
             game.game_state.get_piece(Square::A1),
             Some(black(PieceType::Queen))
+        );
+    }
+
+    #[test]
+    fn pawn_promotes_to_chosen_piece() {
+        let mut game = Game::new_game_from_fen("4k3/P7/8/8/8/8/8/4K3 w - - 0 1").unwrap();
+        let mv = Move {
+            piece: white(PieceType::Pawn),
+            from: Square::A7,
+            to: Square::A8,
+        };
+        assert!(game.make_move_promoting(mv, PieceType::Knight));
+        assert_eq!(
+            game.game_state.get_piece(Square::A8),
+            Some(white(PieceType::Knight))
+        );
+    }
+
+    #[test]
+    fn cannot_promote_to_king_or_pawn() {
+        let mut game = Game::new_game_from_fen("4k3/P7/8/8/8/8/8/4K3 w - - 0 1").unwrap();
+        let mv = Move {
+            piece: white(PieceType::Pawn),
+            from: Square::A7,
+            to: Square::A8,
+        };
+        assert!(!game.make_move_promoting(mv, PieceType::King));
+        assert!(!game.make_move_promoting(mv, PieceType::Pawn));
+    }
+
+    #[test]
+    fn promotion_without_choice_waits_for_the_player() {
+        let mut game = Game::new_game_from_fen("4k3/P7/8/8/8/8/8/4K3 w - - 0 1").unwrap();
+        game.run_command("mv a7a8");
+        assert!(game.pending_promotion.is_some());
+        assert_eq!(
+            game.game_state.get_piece(Square::A7),
+            Some(white(PieceType::Pawn))
+        );
+        game.parse_input(&InputStatus::Promoting(Some(PieceType::Rook)));
+        assert!(game.pending_promotion.is_none());
+        assert_eq!(
+            game.game_state.get_piece(Square::A8),
+            Some(white(PieceType::Rook))
+        );
+    }
+
+    #[test]
+    fn terminal_command_promotes_to_chosen_piece() {
+        let mut game = Game::new_game_from_fen("4k3/P7/8/8/8/8/8/4K3 w - - 0 1").unwrap();
+        game.run_command("mv a7a8n");
+        assert!(game.pending_promotion.is_none());
+        assert_eq!(
+            game.game_state.get_piece(Square::A8),
+            Some(white(PieceType::Knight))
         );
     }
 
