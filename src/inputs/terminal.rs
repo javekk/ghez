@@ -11,9 +11,8 @@ pub enum Command {
     Move(Square, Square, Option<PieceType>), // optional promotion piece
     Undo(usize),                             // number of moves to take back
     History,
-    Engine(Option<String>), // UCI engine path to play against, None to switch it off
-    Side(Side),             // colour played by the human against the engine
-    MoveTime(u64),          // engine thinking time per move, in milliseconds
+    Player(Side, Option<String>), // UCI engine path playing that colour, None for a human
+    MoveTime(u64),                // engine thinking time per move, in milliseconds
     Exit,
 }
 
@@ -28,29 +27,30 @@ pub fn parse_command(line: &str) -> Result<Command, String> {
         "ng" => Ok(Command::NewGame(Some(rest.to_string()))),
         "mv" => parse_move(rest),
         "undo" => parse_undo(rest),
-        "engine" if rest.is_empty() => {
-            Err("usage: engine <path-to-uci-engine> | engine off".into())
-        }
-        "engine" if rest == "off" => Ok(Command::Engine(None)),
-        "engine" => Ok(Command::Engine(Some(rest.to_string()))),
-        "side" => parse_side(rest),
+        "white" => parse_player(Side::White, rest),
+        "black" => parse_player(Side::Black, rest),
         "movetime" => parse_movetime(rest),
         "history" if rest.is_empty() => Ok(Command::History),
         "exit" | "quit" if rest.is_empty() => Ok(Command::Exit),
         "" => Err("empty command".to_string()),
         _ => Err(format!(
-            "unknown command '{name}' (try: ng, ng <fen>, mv e2e4, mv e7e8q, undo [n], history, engine <path>, engine off, side white|black, movetime <ms>, exit)"
+            "unknown command '{name}' (try: ng, ng <fen>, mv e2e4, mv e7e8q, undo [n], history, white <human|path>, black <human|path>, movetime <ms>, exit)"
         )),
     }
 }
 
-fn parse_side(text: &str) -> Result<Command, String> {
-    match text.to_ascii_lowercase().as_str() {
-        "white" | "w" => Ok(Command::Side(Side::White)),
-        "black" | "b" => Ok(Command::Side(Side::Black)),
-        _ => Err(format!(
-            "invalid side '{text}', expected side white or side black"
-        )),
+fn parse_player(side: Side, text: &str) -> Result<Command, String> {
+    match text {
+        "" => Err(format!("usage: {} <human|path-to-uci-engine>", side_name(side))),
+        "human" => Ok(Command::Player(side, None)),
+        path => Ok(Command::Player(side, Some(path.to_string()))),
+    }
+}
+
+fn side_name(side: Side) -> &'static str {
+    match side {
+        Side::White => "white",
+        Side::Black => "black",
     }
 }
 
@@ -189,15 +189,16 @@ mod tests {
     }
 
     #[test]
-    fn parses_engine_commands() {
+    fn parses_player_commands() {
         assert_eq!(
-            parse_command("engine /usr/bin/stockfish"),
-            Ok(Command::Engine(Some("/usr/bin/stockfish".into())))
+            parse_command("white /usr/bin/stockfish"),
+            Ok(Command::Player(Side::White, Some("/usr/bin/stockfish".into())))
         );
-        assert_eq!(parse_command("engine off"), Ok(Command::Engine(None)));
-        assert!(parse_command("engine").is_err());
-        assert_eq!(parse_command("side black"), Ok(Command::Side(Side::Black)));
-        assert!(parse_command("side red").is_err());
+        assert_eq!(
+            parse_command("black human"),
+            Ok(Command::Player(Side::Black, None))
+        );
+        assert!(parse_command("white").is_err());
         assert_eq!(parse_command("movetime 500"), Ok(Command::MoveTime(500)));
         assert!(parse_command("movetime 0").is_err());
     }

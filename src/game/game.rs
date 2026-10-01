@@ -171,7 +171,7 @@ impl Game {
                 }
             }
             // handled by the main loop
-            Ok(Command::Exit | Command::Engine(_) | Command::Side(_) | Command::MoveTime(_)) => {}
+            Ok(Command::Exit | Command::Player(..) | Command::MoveTime(_)) => {}
             Err(e) => eprintln!("{e}"),
         }
     }
