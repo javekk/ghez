@@ -57,6 +57,7 @@ fn parse_options(args: impl Iterator<Item = String>) -> Result<Options, String> 
                     .parse()
                     .map_err(|_| "--movetime expects milliseconds".to_string())?
             }
+            _ if !flag.starts_with("--") => eprintln!("Ignoring argument '{flag}'"),
             _ => return Err(format!("unknown option '{flag}'")),
         }
     }
