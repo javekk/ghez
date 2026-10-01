@@ -1,6 +1,6 @@
 use crate::game::domain::{Piece, Side, Square};
 use crate::game::game::Game;
-use crate::game::game_state::{DrawReason, GameState, GameStatus};
+use crate::game::game_state::GameState;
 use crate::inputs;
 use crate::inputs::handler::{Dialog, InputStatus};
 use crate::render::theme;
@@ -317,6 +317,30 @@ impl Renderer {
         Self::draw_button("Cancel", theme::promotion_cancel_button(), input_status);
     }
 
+    fn draw_game_over_dialog(headline: &str, reason: &str, input_status: &InputStatus) {
+        draw_rectangle(
+            0.,
+            0.,
+            theme::VIRTUAL_W * 4.,
+            theme::VIRTUAL_H * 4.,
+            theme::OVERLAY_COLOR,
+        );
+        let panel = theme::dialog_rect();
+        draw_rectangle(panel.x, panel.y, panel.w, panel.h, theme::DIALOG_COLOR);
+        let x = panel.x + theme::SHELL_PAD;
+        draw_text(
+            &format!("Game over: {headline}"),
+            x,
+            panel.y + 40.,
+            theme::FONT_SIZE as f32,
+            WHITE,
+        );
+        draw_text(reason, x, panel.y + 80., theme::SMALL_FONT_SIZE as f32, WHITE);
+        Self::draw_button("New game", theme::game_over_new_game_button(), input_status);
+        Self::draw_button("Undo", theme::game_over_undo_button(), input_status);
+        Self::draw_button("Close", theme::game_over_close_button(), input_status);
+    }
+
     pub async fn run(&self, game: &Game, input_status: &InputStatus, dialog: Option<&Dialog>) {
         set_camera(&theme::ui_camera());
 
@@ -332,37 +356,10 @@ impl Renderer {
             self.draw_promotion_dialog(mv.piece.side, input_status);
         }
 
-        match game.parse_game_status() {
-            GameStatus::Chilling => {}
-            GameStatus::Battling => { /* Games is going on */ }
-            GameStatus::Draw(draw_reason) => {
-                println!("It's a draw");
-                match draw_reason {
-                    DrawReason::Stalemate => {
-                        println!("Stalemate")
-                    }
-                    DrawReason::FiftyMoveRule => {
-                        println!("FiftyMoveRule")
-                    }
-                    DrawReason::ThreefoldRepetition => {
-                        println!("ThreefoldRepetition")
-                    }
-                    DrawReason::InsufficientMaterial => {
-                        println!("InsufficientMaterial")
-                    }
-                    DrawReason::Agreement => todo!(),
-                }
+        if game.game_over_dialog {
+            if let Some((headline, reason)) = game.parse_game_status().outcome() {
+                Self::draw_game_over_dialog(&headline, reason, input_status);
             }
-            GameStatus::Mated(side) => {
-                let winner = if side == Side::White {
-                    "Black"
-                } else {
-                    "White"
-                };
-                println!("{} has won the game!", winner);
-            }
-            GameStatus::LostOnTime(_side) => todo!(),
-            GameStatus::RunAway(_side) => todo!(),
         }
 
         next_frame().await
