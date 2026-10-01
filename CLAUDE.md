@@ -31,6 +31,10 @@ src/
 │   ├── domain.rs           # Square, Side, PieceType, Piece, Board = [Option<Piece>; 64]
 │   ├── game_state.rs       # GameState: board + side to move + castling rights + en passant + counters
 │   └── game.rs             # Game wrapper: constructors (incl. FEN parsing), drives game progression
+├── engine/
+│   ├── uci.rs              # UciEngine: child process + reader thread, parses uciok/id name/bestmove
+│   ├── engine_player.rs    # EnginePlayer: one engine playing one colour (position/go movetime, stale-search handling)
+│   └── players.rs          # Players: who plays White/Black (human or engine), input blocking, undo rule
 └── render/
     ├── renderer.rs         # macroquad draw calls: board, pieces from sprite sheet
     └── theme.rs            # sizing constants, colors
@@ -44,6 +48,8 @@ src/
 - Piece sprites come from a single sheet `assets/pieces/chess_sprites.png` with rows for color variants and columns for piece types. Slicing happens in `Renderer::new`.
 - `Board` is a flat `[Option<Piece>; 64]` indexed `a1..h1, a2..h2, ..., a8..h8` (rank-major, white's back rank first). FEN parsing in `Game::from_fen` walks ranks 8 → 1.
 - `GameState` is `Copy` — keep it that way (no heap-allocating fields like `HashMap`/`Vec`). Cheap clones matter once search/perft land.
+
+- Players: each colour is a human or a UCI engine (so human-vs-engine and engine-vs-engine use the same code). `ghez --white <human|path> --black <human|path> [--movetime <ms>]`, or at runtime `white <human|path>`, `black <human|path>`, `movetime <ms>`. ghez is the UCI *client*; engines run as child processes and never block the render loop.
 
 ## Plan
 

@@ -3,7 +3,7 @@ use std::sync::mpsc::{self, Receiver};
 use rustyline::DefaultEditor;
 use rustyline::error::ReadlineError;
 
-use crate::game::domain::{PieceType, Square};
+use crate::game::domain::{PieceType, Side, Square};
 
 #[derive(Debug, PartialEq)]
 pub enum Command {
@@ -11,6 +11,8 @@ pub enum Command {
     Move(Square, Square, Option<PieceType>), // optional promotion piece
     Undo(usize),                             // number of moves to take back
     History,
+    Player(Side, Option<String>), // UCI engine path playing that colour, None for a human
+    MoveTime(u64),                // engine thinking time per move, in milliseconds
     Exit,
 }
 
@@ -25,11 +27,38 @@ pub fn parse_command(line: &str) -> Result<Command, String> {
         "ng" => Ok(Command::NewGame(Some(rest.to_string()))),
         "mv" => parse_move(rest),
         "undo" => parse_undo(rest),
+        "white" => parse_player(Side::White, rest),
+        "black" => parse_player(Side::Black, rest),
+        "movetime" => parse_movetime(rest),
         "history" if rest.is_empty() => Ok(Command::History),
         "exit" | "quit" if rest.is_empty() => Ok(Command::Exit),
         "" => Err("empty command".to_string()),
         _ => Err(format!(
-            "unknown command '{name}' (try: ng, ng <fen>, mv e2e4, mv e7e8q, undo [n], history, exit)"
+            "unknown command '{name}' (try: ng, ng <fen>, mv e2e4, mv e7e8q, undo [n], history, white <human|path>, black <human|path>, movetime <ms>, exit)"
+        )),
+    }
+}
+
+fn parse_player(side: Side, text: &str) -> Result<Command, String> {
+    match text {
+        "" => Err(format!("usage: {} <human|path-to-uci-engine>", side_name(side))),
+        "human" => Ok(Command::Player(side, None)),
+        path => Ok(Command::Player(side, Some(path.to_string()))),
+    }
+}
+
+fn side_name(side: Side) -> &'static str {
+    match side {
+        Side::White => "white",
+        Side::Black => "black",
+    }
+}
+
+fn parse_movetime(text: &str) -> Result<Command, String> {
+    match text.parse::<u64>() {
+        Ok(ms) if ms > 0 => Ok(Command::MoveTime(ms)),
+        _ => Err(format!(
+            "invalid time '{text}', expected milliseconds, e.g. movetime 1000"
         )),
     }
 }
@@ -46,7 +75,7 @@ fn parse_undo(text: &str) -> Result<Command, String> {
     }
 }
 
-fn parse_move(text: &str) -> Result<Command, String> {
+pub fn parse_move(text: &str) -> Result<Command, String> {
     let text = text.trim();
     if !text.is_ascii() || !(4..=5).contains(&text.len()) {
         return Err(format!(
@@ -157,6 +186,21 @@ mod tests {
         assert!(parse_command("undo x").is_err());
         assert_eq!(parse_command("history"), Ok(Command::History));
         assert!(parse_command("history 2").is_err());
+    }
+
+    #[test]
+    fn parses_player_commands() {
+        assert_eq!(
+            parse_command("white /usr/bin/stockfish"),
+            Ok(Command::Player(Side::White, Some("/usr/bin/stockfish".into())))
+        );
+        assert_eq!(
+            parse_command("black human"),
+            Ok(Command::Player(Side::Black, None))
+        );
+        assert!(parse_command("white").is_err());
+        assert_eq!(parse_command("movetime 500"), Ok(Command::MoveTime(500)));
+        assert!(parse_command("movetime 0").is_err());
     }
 
     #[test]
