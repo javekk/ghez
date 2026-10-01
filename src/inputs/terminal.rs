@@ -3,7 +3,7 @@ use std::sync::mpsc::{self, Receiver};
 use rustyline::DefaultEditor;
 use rustyline::error::ReadlineError;
 
-use crate::game::domain::{PieceType, Square};
+use crate::game::domain::{PieceType, Side, Square};
 
 #[derive(Debug, PartialEq)]
 pub enum Command {
@@ -11,6 +11,9 @@ pub enum Command {
     Move(Square, Square, Option<PieceType>), // optional promotion piece
     Undo(usize),                             // number of moves to take back
     History,
+    Engine(Option<String>), // UCI engine path to play against, None to switch it off
+    Side(Side),             // colour played by the human against the engine
+    MoveTime(u64),          // engine thinking time per move, in milliseconds
     Exit,
 }
 
@@ -25,11 +28,37 @@ pub fn parse_command(line: &str) -> Result<Command, String> {
         "ng" => Ok(Command::NewGame(Some(rest.to_string()))),
         "mv" => parse_move(rest),
         "undo" => parse_undo(rest),
+        "engine" if rest.is_empty() => {
+            Err("usage: engine <path-to-uci-engine> | engine off".into())
+        }
+        "engine" if rest == "off" => Ok(Command::Engine(None)),
+        "engine" => Ok(Command::Engine(Some(rest.to_string()))),
+        "side" => parse_side(rest),
+        "movetime" => parse_movetime(rest),
         "history" if rest.is_empty() => Ok(Command::History),
         "exit" | "quit" if rest.is_empty() => Ok(Command::Exit),
         "" => Err("empty command".to_string()),
         _ => Err(format!(
-            "unknown command '{name}' (try: ng, ng <fen>, mv e2e4, mv e7e8q, undo [n], history, exit)"
+            "unknown command '{name}' (try: ng, ng <fen>, mv e2e4, mv e7e8q, undo [n], history, engine <path>, engine off, side white|black, movetime <ms>, exit)"
+        )),
+    }
+}
+
+fn parse_side(text: &str) -> Result<Command, String> {
+    match text.to_ascii_lowercase().as_str() {
+        "white" | "w" => Ok(Command::Side(Side::White)),
+        "black" | "b" => Ok(Command::Side(Side::Black)),
+        _ => Err(format!(
+            "invalid side '{text}', expected side white or side black"
+        )),
+    }
+}
+
+fn parse_movetime(text: &str) -> Result<Command, String> {
+    match text.parse::<u64>() {
+        Ok(ms) if ms > 0 => Ok(Command::MoveTime(ms)),
+        _ => Err(format!(
+            "invalid time '{text}', expected milliseconds, e.g. movetime 1000"
         )),
     }
 }
@@ -46,7 +75,7 @@ fn parse_undo(text: &str) -> Result<Command, String> {
     }
 }
 
-fn parse_move(text: &str) -> Result<Command, String> {
+pub fn parse_move(text: &str) -> Result<Command, String> {
     let text = text.trim();
     if !text.is_ascii() || !(4..=5).contains(&text.len()) {
         return Err(format!(
@@ -157,6 +186,20 @@ mod tests {
         assert!(parse_command("undo x").is_err());
         assert_eq!(parse_command("history"), Ok(Command::History));
         assert!(parse_command("history 2").is_err());
+    }
+
+    #[test]
+    fn parses_engine_commands() {
+        assert_eq!(
+            parse_command("engine /usr/bin/stockfish"),
+            Ok(Command::Engine(Some("/usr/bin/stockfish".into())))
+        );
+        assert_eq!(parse_command("engine off"), Ok(Command::Engine(None)));
+        assert!(parse_command("engine").is_err());
+        assert_eq!(parse_command("side black"), Ok(Command::Side(Side::Black)));
+        assert!(parse_command("side red").is_err());
+        assert_eq!(parse_command("movetime 500"), Ok(Command::MoveTime(500)));
+        assert!(parse_command("movetime 0").is_err());
     }
 
     #[test]

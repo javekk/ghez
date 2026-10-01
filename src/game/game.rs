@@ -13,6 +13,8 @@ pub struct Game {
     pub game_history: Vec<GameState>,
     /// SAN of each played move; `san_history[i]` leads to `game_history[i + 1]`.
     pub san_history: Vec<String>,
+    /// Played moves in UCI notation ("e2e4", "e7e8q"), parallel to `san_history`.
+    pub uci_history: Vec<String>,
     /// Pawn move waiting for the player to pick the promotion piece.
     pub pending_promotion: Option<Move>,
     /// The last move ended the game and the result dialog is still showing.
@@ -29,6 +31,7 @@ impl Game {
             game_state,
             game_history,
             san_history: Vec::new(),
+            uci_history: Vec::new(),
             pending_promotion: None,
             game_over_dialog: false,
         }
@@ -43,6 +46,7 @@ impl Game {
             game_state,
             game_history,
             san_history: Vec::new(),
+            uci_history: Vec::new(),
             pending_promotion: None,
             game_over_dialog: false,
         })
@@ -56,6 +60,7 @@ impl Game {
             game_state,
             game_history,
             san_history: Vec::new(),
+            uci_history: Vec::new(),
             pending_promotion: None,
             game_over_dialog: false,
         }
@@ -165,7 +170,8 @@ impl Game {
                     println!("{}", rows.join("\n"));
                 }
             }
-            Ok(Command::Exit) => {} // handled by the main loop
+            // handled by the main loop
+            Ok(Command::Exit | Command::Engine(_) | Command::Side(_) | Command::MoveTime(_)) => {}
             Err(e) => eprintln!("{e}"),
         }
     }
@@ -177,6 +183,7 @@ impl Game {
         self.game_over_dialog = false;
         let n = count.min(self.san_history.len());
         self.san_history.truncate(self.san_history.len() - n);
+        self.uci_history.truncate(self.uci_history.len() - n);
         self.game_history.truncate(self.game_history.len() - n);
         if let Some(state) = self.game_history.last() {
             self.game_state = *state;
@@ -212,7 +219,7 @@ impl Game {
     /// Plays `mv`. A promotion without a chosen piece is parked in
     /// `pending_promotion` until the player picks one. Returns false if the
     /// move is illegal.
-    fn request_move(&mut self, mv: Move, promotion: Option<PieceType>) -> bool {
+    pub fn request_move(&mut self, mv: Move, promotion: Option<PieceType>) -> bool {
         if !mv.is_promotion() {
             return self.make_move(mv);
         }
@@ -277,6 +284,7 @@ impl Game {
         self.game_history.push(self.game_state.clone());
         self.san_history
             .push(format!("{san}{}", notation::suffix(&self.game_state)));
+        self.uci_history.push(notation::uci(mv, promote_to));
 
         if let Some((headline, reason)) = self.parse_game_status().outcome() {
             println!("Game over: {headline} ({reason})");

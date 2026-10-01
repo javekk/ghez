@@ -39,6 +39,20 @@ pub fn san_base(state: &GameState, mv: Move, promote_to: PieceType) -> String {
     out
 }
 
+/// UCI long algebraic notation of `mv`: "e2e4", "e7e8q".
+pub fn uci(mv: Move, promote_to: PieceType) -> String {
+    let mut out = format!("{}{}", mv.from, mv.to);
+    if mv.is_promotion() {
+        out.push(match promote_to {
+            PieceType::Rook => 'r',
+            PieceType::Bishop => 'b',
+            PieceType::Knight => 'n',
+            _ => 'q',
+        });
+    }
+    out
+}
+
 /// "+" or "#" for the position after a move, empty otherwise.
 pub fn suffix(state_after: &GameState) -> &'static str {
     if movegen::is_mate(state_after) {
