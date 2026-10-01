@@ -38,7 +38,7 @@ pub struct EnginePlayer {
 impl EnginePlayer {
     pub fn start(path: &str, side: Side, game: &Game) -> Result<Self, String> {
         Ok(Self {
-            engine: UciEngine::spawn(path)?,
+            engine: UciEngine::spawn(path, &format!("{side:?}"))?,
             side,
             ready: false,
             searching: None,

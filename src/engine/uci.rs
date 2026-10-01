@@ -39,12 +39,17 @@ pub struct UciEngine {
     child: Child,
     stdin: ChildStdin,
     messages: Receiver<EngineMessage>,
+    /// Prefix for the logged UCI traffic, e.g. "White".
+    label: String,
 }
 
 impl UciEngine {
-    /// Starts the engine at `path` and sends the `uci` handshake.
-    pub fn spawn(path: &str) -> Result<Self, String> {
-        let mut child = Command::new(path)
+    /// Starts the engine command `path` (program followed by its arguments) and sends the `uci` handshake.
+    pub fn spawn(path: &str, label: &str) -> Result<Self, String> {
+        let mut words = path.split_whitespace();
+        let program = words.next().ok_or("empty engine command")?;
+        let mut child = Command::new(program)
+            .args(words)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -54,9 +59,11 @@ impl UciEngine {
         let stdout = child.stdout.take().ok_or("engine stdout unavailable")?;
 
         let (tx, messages) = mpsc::channel();
+        let reader_label = label.to_string();
         std::thread::spawn(move || {
             for line in BufReader::new(stdout).lines() {
                 let Ok(line) = line else { break };
+                println!("[{reader_label} <] {line}");
                 if let Some(message) = parse_line(&line) {
                     if tx.send(message).is_err() {
                         return;
@@ -70,12 +77,14 @@ impl UciEngine {
             child,
             stdin,
             messages,
+            label: label.to_string(),
         };
         engine.send("uci");
         Ok(engine)
     }
 
     pub fn send(&mut self, line: &str) {
+        println!("[{} >] {line}", self.label);
         // A dead engine is reported through `EngineMessage::Closed`.
         let _ = writeln!(self.stdin, "{line}").and_then(|_| self.stdin.flush());
     }
