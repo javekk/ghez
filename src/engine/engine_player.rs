@@ -33,19 +33,26 @@ pub struct EnginePlayer {
     failed_at: Option<Snapshot>,
     /// Starting position of the game the engine was last told about.
     root: GameState,
+    quiet: bool,
 }
 
 impl EnginePlayer {
-    pub fn start(path: &str, side: Side, game: &Game) -> Result<Self, String> {
+    pub fn start(path: &str, side: Side, game: &Game, quiet: bool) -> Result<Self, String> {
         Ok(Self {
-            engine: UciEngine::spawn(path, &format!("{side:?}"))?,
+            engine: UciEngine::spawn(path, &format!("{side:?}"), quiet)?,
             side,
             ready: false,
             searching: None,
             draining: false,
             failed_at: None,
             root: game.game_history[0],
+            quiet,
         })
+    }
+
+    /// The engine's last answer was unusable and it has not been asked again since.
+    pub fn failed(&self) -> bool {
+        self.failed_at.is_some()
     }
 
     /// Reads engine output, plays its move and starts a new search when it is its turn.
@@ -53,7 +60,10 @@ impl EnginePlayer {
     pub fn tick(&mut self, game: &mut Game, movetime_ms: u64) -> Result<(), String> {
         for message in self.engine.poll() {
             match message {
-                EngineMessage::Name(name) => println!("{:?} engine: {name}", self.side),
+                EngineMessage::Name(name) if !self.quiet => {
+                    println!("{:?} engine: {name}", self.side)
+                }
+                EngineMessage::Name(_) => {}
                 EngineMessage::UciOk => self.ready = true,
                 EngineMessage::BestMove(mv) => self.on_best_move(game, mv),
                 EngineMessage::Closed => return Err("engine process exited".to_string()),
@@ -119,6 +129,7 @@ impl EnginePlayer {
                 _ => None,
             });
         match played {
+            Some(()) if self.quiet => {}
             Some(()) => println!("{:?} engine played {}", self.side, text.unwrap_or_default()),
             None => {
                 eprintln!("{:?} engine returned no usable move ({text:?})", self.side);

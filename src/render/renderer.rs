@@ -1,3 +1,4 @@
+use crate::engine::tournament::Tournament;
 use crate::game::domain::{Piece, Side, Square};
 use crate::game::game::Game;
 use crate::game::game_state::GameState;
@@ -363,6 +364,59 @@ impl Renderer {
         }
 
         next_frame().await
+    }
+
+    /// Match mode: the first board live, with the tally in place of the buttons.
+    pub async fn run_match(&self, tournament: &Tournament) {
+        set_camera(&theme::ui_camera());
+
+        clear_background(theme::BORDER_COLOR);
+
+        match tournament.shown() {
+            Some(game) => {
+                self.draw_board(game, &InputStatus::Chilling);
+                Self::draw_move_list(game);
+            }
+            None => {
+                self.draw_squares();
+                self.draw_borders();
+            }
+        }
+        Self::draw_match_panel(tournament);
+
+        next_frame().await
+    }
+
+    fn draw_match_panel(tournament: &Tournament) {
+        // File name of the engine command, cut to fit the shell.
+        let name = |command: &str| -> String {
+            let program = command.split_whitespace().next().unwrap_or(command);
+            let file = program.rsplit('/').next().unwrap_or(program);
+            file.chars().take(24).collect()
+        };
+        let score = tournament.score;
+        let lines = [
+            if tournament.is_finished() {
+                "Match over".to_string()
+            } else {
+                "Match".to_string()
+            },
+            format!("A: {}", name(&tournament.engine_a)),
+            format!("B: {}", name(&tournament.engine_b)),
+            format!("Games {}/{}", score.games(), tournament.total),
+            format!("A +{} ={} -{}", score.wins, score.draws, score.losses),
+            format!("A score {:.1}%", score.percent()),
+        ];
+        let x = theme::VIRTUAL_H + theme::SHELL_PAD;
+        for (i, line) in lines.iter().enumerate() {
+            draw_text(
+                line,
+                x,
+                theme::SHELL_PAD + (i as f32 + 1.) * theme::MOVE_ROW_H,
+                theme::SMALL_FONT_SIZE as f32 * 1.25,
+                WHITE,
+            );
+        }
     }
 
     fn draw_button(label: &str, rect: Rect, input_status: &InputStatus) {

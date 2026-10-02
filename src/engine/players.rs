@@ -17,6 +17,8 @@ pub struct Players {
     white: Controller,
     black: Controller,
     pub movetime_ms: u64,
+    /// Engines started from now on do not log their moves and UCI traffic.
+    pub quiet: bool,
 }
 
 impl Players {
@@ -25,6 +27,7 @@ impl Players {
             white: Controller::Human,
             black: Controller::Human,
             movetime_ms,
+            quiet: false,
         }
     }
 
@@ -46,12 +49,20 @@ impl Players {
         matches!(self.controller(side), Controller::Human)
     }
 
+    /// In an engine game: `side`'s engine died or answered with an unusable move.
+    pub fn forfeited(&self, side: Side) -> bool {
+        match self.controller(side) {
+            Controller::Human => true,
+            Controller::Engine(engine) => engine.failed(),
+        }
+    }
+
     /// Hands `side` to the UCI engine at `path`, or back to the human when `None`.
     pub fn set(&mut self, side: Side, path: Option<&str>, game: &Game) -> Result<(), String> {
         // Stop the previous engine first
         *self.controller_mut(side) = Controller::Human;
         if let Some(path) = path {
-            let engine = EnginePlayer::start(path, side, game)?;
+            let engine = EnginePlayer::start(path, side, game, self.quiet)?;
             *self.controller_mut(side) = Controller::Engine(engine);
         }
         Ok(())
@@ -89,7 +100,11 @@ impl Players {
             let movetime_ms = self.movetime_ms;
             if let Controller::Engine(engine) = self.controller_mut(side) {
                 if let Err(e) = engine.tick(game, movetime_ms) {
-                    eprintln!("{side:?} engine stopped: {e}; {side:?} is now played by a human");
+                    if !self.quiet {
+                        eprintln!(
+                            "{side:?} engine stopped: {e}; {side:?} is now played by a human"
+                        );
+                    }
                     *self.controller_mut(side) = Controller::Human;
                 }
             }
@@ -98,17 +113,17 @@ impl Players {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::game::domain::{Move, Square};
     use std::sync::Mutex;
     use std::time::{Duration, Instant};
 
     /// Writing a script while another test forks leaks its fd into the child (ETXTBSY).
-    static SPAWN_LOCK: Mutex<()> = Mutex::new(());
+    pub(crate) static SPAWN_LOCK: Mutex<()> = Mutex::new(());
 
     /// A shell "engine" that answers every `go` with `reply`.
-    fn fake_engine(tag: &str, reply: &str) -> String {
+    pub(crate) fn fake_engine(tag: &str, reply: &str) -> String {
         let path =
             std::env::temp_dir().join(format!("ghez-fake-engine-{}-{tag}.sh", std::process::id()));
         std::fs::write(
